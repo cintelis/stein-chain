@@ -1,0 +1,17 @@
+{
+  "name": "stein-follower",
+  "description": "A Stein devnet follower node in Cloudflare Containers",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261001.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.145.0"
+  }
+}

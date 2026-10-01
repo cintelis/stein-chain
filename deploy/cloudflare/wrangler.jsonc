@@ -1,0 +1,32 @@
+// A Stein devnet FOLLOWER in Cloudflare Containers. Never a validator here:
+// container disks are not durable, so a validator's chain would vanish when
+// the container sleeps (SPEC §10.5). A follower re-syncs from its leader and
+// re-verifies every block on each start, so losing its disk loses nothing.
+//
+// Deploy with deploy.sh, which supplies the leader URL and genesis hash.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stein-follower",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-30",
+  "observability": { "enabled": true },
+  "containers": [
+    {
+      "class_name": "SteinFollower",
+      // The same image as the local Docker validator, built from source.
+      "image": "../docker/Dockerfile",
+      "image_build_context": "../..",
+      "instance_type": "basic",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "class_name": "SteinFollower", "name": "STEIN_FOLLOWER" }]
+  },
+  "migrations": [{ "new_sqlite_classes": ["SteinFollower"], "tag": "v1" }],
+  "vars": {
+    // Overridden at deploy time by deploy.sh.
+    "STEIN_LEADER": "",
+    "STEIN_GENESIS_HASH": ""
+  }
+}

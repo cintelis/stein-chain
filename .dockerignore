@@ -1,0 +1,6 @@
+target/
+.git/
+.stein-devnet/
+**/node_modules/
+deploy/cloudflare/.wrangler/
+*.seed

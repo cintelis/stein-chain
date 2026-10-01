@@ -1,0 +1,62 @@
+# Local Stein devnet.
+#
+#   docker compose -f deploy/docker/compose.yml up -d --build stein-a
+#       validator A on http://127.0.0.1:8645 (data in the stein-a volume)
+#
+#   docker compose -f deploy/docker/compose.yml --profile tunnel up -d
+#       + a Cloudflare quick tunnel exposing A at a random
+#         https://<name>.trycloudflare.com (see `logs tunnel`), for a follower
+#         running in Cloudflare Containers (deploy/cloudflare)
+#
+#   STEIN_GENESIS_HASH=<hash> docker compose -f deploy/docker/compose.yml --profile local-follower up -d
+#       + follower B on http://127.0.0.1:8646, following A over the compose network
+#
+# The validator's RPC has no authentication or rate limiting yet: the tunnel
+# is for a devnet only.
+
+name: stein-devnet
+
+services:
+  stein-a:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: stein-node:dev
+    environment:
+      STEIN_ROLE: validator
+    ports:
+      - "127.0.0.1:8645:8645"
+    volumes:
+      - stein-a:/data
+    restart: unless-stopped
+
+  stein-b:
+    profiles: [local-follower]
+    image: stein-node:dev
+    depends_on:
+      stein-a:
+        condition: service_healthy
+    environment:
+      STEIN_ROLE: follower
+      STEIN_LEADER: http://stein-a:8645
+      # Required; the entrypoint refuses to start without it.
+      STEIN_GENESIS_HASH: ${STEIN_GENESIS_HASH:-}
+    ports:
+      - "127.0.0.1:8646:8645"
+    volumes:
+      - stein-b:/data
+    restart: unless-stopped
+
+  tunnel:
+    profiles: [tunnel]
+    # cloudflared 2026.9.3, pinned by digest.
+    image: cloudflare/cloudflared@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
+    command: tunnel --no-autoupdate --url http://stein-a:8645
+    depends_on:
+      stein-a:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  stein-a:
+  stein-b:
