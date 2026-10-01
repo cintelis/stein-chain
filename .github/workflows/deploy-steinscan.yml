@@ -25,7 +25,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      SITE: https://steinscan.nick-598.workers.dev
+      SITE: https://steinscan.io
     defaults:
       run:
         working-directory: explorer
@@ -39,13 +39,16 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npx wrangler deploy
       # What is served must be what was committed, with the security headers.
+      # A query string unique to this run bypasses Cloudflare's edge cache,
+      # which can serve the previous version for over a minute.
       - name: Verify the deployment
         run: |
-          for _ in $(seq 30); do
-            curl -fsS "$SITE/app.js" | cmp -s - public/app.js && break
-            sleep 2
+          url="$SITE/app.js?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT"
+          for _ in $(seq 60); do
+            curl -fsS "$url" | cmp -s - public/app.js && break
+            sleep 5
           done
-          curl -fsS "$SITE/app.js" | cmp - public/app.js
+          curl -fsS "$url" | cmp - public/app.js
           headers=$(curl -fsSI "$SITE/")
           grep -qi "^content-security-policy: default-src 'self'" <<<"$headers"
           grep -qi "^x-content-type-options: nosniff" <<<"$headers"
