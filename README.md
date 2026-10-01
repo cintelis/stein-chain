@@ -18,6 +18,7 @@ A post-quantum layer-1 blockchain. Native token: **STEIN**.
 
 Protocol design, security rules, measured performance and hardware: **[docs/SPEC.md](docs/SPEC.md)**.
 Constraints that keep the protocol shardable later: **[docs/SHARD-READY.md](docs/SHARD-READY.md)**.
+Smart contract design (WebAssembly): **[docs/CONTRACTS.md](docs/CONTRACTS.md)**.
 
 ## Status
 

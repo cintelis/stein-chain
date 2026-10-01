@@ -553,7 +553,8 @@ tested by simulation, never budgeted. Liveness (finality keeps advancing) is
 targeted at **99.999%**, about 5 minutes of stalled finality per year. That
 can only be demonstrated by running a decentralised testnet and then mainnet
 over time, not by testing alone.
-| later | FN-DSA-512 accounts, STARK signature aggregation, smart contracts (WASM VM), light clients | |
+| C0–C4 | WASM smart contracts: design, VM and receipts, SDK and standards, audit (see [CONTRACTS.md](CONTRACTS.md) §14) | design written |
+| later | FN-DSA-512 accounts, STARK signature aggregation, light clients | |
 
 ### 11.1 steinscan (block explorer) [built: live explorer; planned: indexer]
 **Built:** `explorer/`, a static app that reads a node's RPC and follows its
@@ -587,7 +588,9 @@ the data an indexer starts from.
   signatures then never enter blocks, so validators and archives stop paying
   for them. This is the path past ~5,000 TPS, and the basis for validity
   rollups.
-- **Smart contracts:** a WASM VM (e.g. wasmtime with fuel metering) with access
-  lists, enabling parallel execution.
+- **Smart contracts:** WebAssembly, decided. Design in
+  [CONTRACTS.md](CONTRACTS.md): wasmtime with deterministic fuel metering, a
+  Rust SDK, asynchronous calls between contracts (shard-ready), storage
+  deposits, and ML-DSA verification inside contracts.
 - **Light clients:** JMT proofs plus finalized header chains signed by
   validators.
