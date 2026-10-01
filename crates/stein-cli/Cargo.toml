@@ -1,0 +1,27 @@
+[package]
+name = "stein-cli"
+description = "Stein Chain command-line wallet"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "stein"
+path = "src/main.rs"
+
+[dependencies]
+stein-crypto = { workspace = true }
+stein-types = { workspace = true }
+stein-node = { path = "../stein-node" }
+borsh = { workspace = true }
+clap = { workspace = true }
+hex = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

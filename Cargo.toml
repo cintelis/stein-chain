@@ -1,0 +1,57 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+license = "UNLICENSED"
+
+[workspace.dependencies]
+stein-crypto = { path = "crates/stein-crypto" }
+stein-types = { path = "crates/stein-types" }
+stein-state = { path = "crates/stein-state" }
+
+# Cryptography. AWS-LC is the only implementation of ML-DSA in the workspace:
+# FIPS 204 final, on the FIPS 140-3 validation track, assembly-optimised, and the
+# rustls provider that will carry the hybrid X25519MLKEM768 handshake (SPEC §7).
+aws-lc-rs = "1.18"
+blake3 = "1.8"
+zeroize = "1.8"
+
+rayon = "1.12"
+borsh = { version = "1.8", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+thiserror = "2"
+parking_lot = "0.12"
+
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync", "fs"] }
+axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "json", "query"] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+clap = { version = "4.6", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+arithmetic_side_effects = "warn"
+unwrap_used = "warn"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Signature verification dominates the node's CPU budget; keep the hashing fast
+# even in debug builds so devnet behaves like the real thing.
+[profile.dev.package.blake3]
+opt-level = 3

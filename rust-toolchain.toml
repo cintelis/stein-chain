@@ -1,0 +1,7 @@
+# Pinned to an exact release, not "stable": builds are reproducible, local and CI
+# always run the same compiler and the same clippy, and upgrading is a deliberate
+# commit. To upgrade, change the version here, in deploy/docker/Dockerfile and in
+# Cargo.toml (rust-version) together - scripts/check-toolchain-pin.sh enforces it.
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]

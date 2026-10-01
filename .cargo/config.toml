@@ -1,0 +1,9 @@
+# Windows development convenience only (same as Sigilant).
+#
+# aws-lc-sys needs the NASM assembler on x86-64 Windows. Use the assembler output
+# AWS ships with the crate instead of requiring every Windows contributor to
+# install NASM. No effect on Linux or macOS; validator release binaries are built
+# from source on Linux, so nothing prebuilt reaches production. Set
+# AWS_LC_SYS_PREBUILT_NASM=0 to build with your own NASM instead.
+[env]
+AWS_LC_SYS_PREBUILT_NASM = { value = "1", force = false }
