@@ -35,7 +35,36 @@ The first start creates a devnet in the `stein-a` volume:
 
 Keep `faucet.seed` private.
 
-## 2. Tunnel to A
+## 2. Tunnel to A: named, stable (current setup)
+
+Validator A is published at **https://rpc.steinchain.com** through the
+Cloudflare Tunnel `stein-devnet`. Its configuration is committed in
+`deploy/docker/cloudflared/config.yml`. Its credentials are not committed:
+they live in `~/.cloudflared/stein-devnet.json` on the operator's machine, and
+`deploy/docker/.env` (gitignored) points compose at them.
+
+```sh
+docker compose -f deploy/docker/compose.yml --profile named-tunnel up -d named-tunnel
+curl -s https://rpc.steinchain.com/status
+```
+
+One-time setup on a new machine. In Git Bash, set `MSYS_NO_PATHCONV=1` first,
+or the container paths get rewritten:
+
+```sh
+CF="docker run --rm -v $HOME/.cloudflared:/home/nonroot/.cloudflared cloudflare/cloudflared:2026.9.3"
+$CF tunnel login        # opens a link: authorise steinchain.com
+$CF tunnel create --credentials-file /home/nonroot/.cloudflared/stein-devnet.json stein-devnet
+$CF tunnel route dns stein-devnet rpc.steinchain.com
+echo "STEIN_TUNNEL_CREDENTIALS=$HOME/.cloudflared/stein-devnet.json" > deploy/docker/.env
+```
+
+The repository variables `STEIN_LEADER_URL` (https://rpc.steinchain.com) and
+`STEIN_GENESIS_HASH` tell CI where the validator is and which chain to pin.
+If the validator is re-initialised (a new genesis), update
+`STEIN_GENESIS_HASH`, or the follower deploy will refuse to run.
+
+## 2b. Quick tunnel (no account, temporary)
 
 ```sh
 docker compose -f deploy/docker/compose.yml --profile tunnel up -d
@@ -53,6 +82,12 @@ stable URL, use a named tunnel on your own domain instead.
 > `docker compose -f deploy/docker/compose.yml stop tunnel`.
 
 ## 3. Follower B (Cloudflare Containers)
+
+**Automatic:** after CI passes on `main`, the *Deploy Cloudflare follower*
+workflow deploys the tested commit, if node or deployment code changed since
+the last deploy. It can also be run by hand from the Actions tab.
+
+**From your machine:**
 
 Requires the Workers Paid plan (Containers) and Docker running locally:
 wrangler builds the image from `deploy/docker/Dockerfile`.

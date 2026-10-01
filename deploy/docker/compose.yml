@@ -69,6 +69,22 @@ services:
       - stein-fn:/data
     restart: unless-stopped
 
+  # Named tunnel: validator A at https://rpc.steinchain.com (stable).
+  # Credentials stay outside the repository; see deploy/README.md.
+  named-tunnel:
+    profiles: [named-tunnel]
+    image: cloudflare/cloudflared@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ${STEIN_TUNNEL_CREDENTIALS:-./cloudflared/credentials.json}:/etc/cloudflared/credentials.json:ro
+    depends_on:
+      stein-a:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Quick tunnel: a random https://*.trycloudflare.com address, no account
+  # needed. Changes every restart.
   tunnel:
     profiles: [tunnel]
     # cloudflared 2026.9.3, pinned by digest.

@@ -1,0 +1,14 @@
+# Named Cloudflare Tunnel for validator A: a stable public address
+# (https://rpc.steinchain.com) instead of a quick tunnel's random one.
+#
+# The tunnel's credentials are NOT in the repository. They live in
+# ~/.cloudflared/stein-devnet.json on the operator's machine (created by
+# `cloudflared tunnel create`, see deploy/README.md) and are mounted read-only.
+tunnel: stein-devnet
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  # Only the validator's RPC, and only on this hostname.
+  - hostname: rpc.steinchain.com
+    service: http://stein-a:8645
+  - service: http_status:404

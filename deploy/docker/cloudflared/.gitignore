@@ -1,0 +1,4 @@
+# Tunnel credentials never enter the repository.
+credentials.json
+*.json
+cert.pem

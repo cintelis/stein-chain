@@ -10,6 +10,7 @@
 
 const NETWORKS = [
   { id: "devnet", name: "Devnet (Cloudflare follower)", url: "https://stein-follower.nick-598.workers.dev" },
+  { id: "devnet-validator", name: "Devnet validator (rpc.steinchain.com)", url: "https://rpc.steinchain.com" },
   { id: "local", name: "Local validator :8645", url: "http://127.0.0.1:8645" },
   { id: "local-follower", name: "Local follower :8646", url: "http://127.0.0.1:8646" },
   { id: "fn-dsa", name: "FN-DSA test network :8655", url: "http://127.0.0.1:8655" },
