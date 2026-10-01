@@ -61,6 +61,19 @@ function svg(tag, attrs) {
 }
 const $ = (id) => document.getElementById(id);
 
+// List icons, drawn here (no icon font: the CSP allows nothing external).
+// A cube for blocks, a document for transactions.
+const ICONS = {
+  block: ["M12 2.6 20.4 7.2v9.6L12 21.4 3.6 16.8V7.2Z", "M3.6 7.2 12 11.8l8.4-4.6", "M12 11.8v9.6"],
+  tx: ["M6.2 2.6h8.1l4.5 4.5v14.3H6.2Z", "M14.3 2.6v4.5h4.5", "M9 12.2h6.8", "M9 15.4h6.8", "M9 18.6h4.2"],
+};
+function icon(kind) {
+  const el = svg("svg", { viewBox: "0 0 24 24", width: 20, height: 20, fill: "none", stroke: "currentColor",
+    "stroke-width": 1.6, "stroke-linejoin": "round", "stroke-linecap": "round", "aria-hidden": "true" });
+  for (const d of ICONS[kind]) el.append(svg("path", { d }));
+  return el;
+}
+
 function short(hash, head = 10, tail = 8) {
   if (!hash) return "";
   return hash.length <= head + tail + 1 ? hash : `${hash.slice(0, head)}…${hash.slice(-tail)}`;
@@ -325,7 +338,7 @@ function renderLatestBlocks(flash) {
     const prev = state.blocks[i + 1];
     const secs = prev ? Math.max(0, Math.round((b.timestamp_ms - prev.timestamp_ms) / 1000)) : null;
     return h("div", { class: b.height === flash ? "list-row flash" : "list-row" },
-      h("div", { class: "lr-first" }, h("div", { class: "sq" }, "Bk"),
+      h("div", { class: "lr-first" }, h("div", { class: "sq", title: "Block" }, icon("block")),
         h("div", {}, h("div", {}, linkBlock(b.height)), h("div", { class: "small muted" }, agoEl(b.timestamp_ms)))),
       h("div", { class: "lr-mid" },
         h("div", {}, "Validated By ", linkAddr(b.proposer)),
@@ -347,7 +360,7 @@ function renderLatestTxs(flash) {
   if (!txs.length) { el.replaceChildren(h("div", { class: "empty" }, "No transactions yet. Send one with the stein wallet.")); return; }
   el.replaceChildren(...txs.map((t) =>
     h("div", { class: flash && flash.has(t.id) ? "list-row flash" : "list-row" },
-      h("div", { class: "lr-first" }, h("div", { class: "sq" }, "Tx"),
+      h("div", { class: "lr-first" }, h("div", { class: "sq", title: "Transaction" }, icon("tx")),
         h("div", {}, h("div", {}, linkTx(t.id)), h("div", { class: "small muted" }, t.ts ? agoEl(t.ts) : statusPill(t)))),
       h("div", { class: "lr-mid" },
         h("div", {}, "From ", linkAddr(t.sender)),

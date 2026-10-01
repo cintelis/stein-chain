@@ -202,3 +202,5 @@ tbody tr:hover td { background: var(--head); }
 
 /* The hidden attribute must win over display rules. */
 [hidden] { display: none !important; }
+
+.sq svg { display: block; }
