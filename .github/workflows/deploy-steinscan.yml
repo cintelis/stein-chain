@@ -39,16 +39,22 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npx wrangler deploy
       # What is served must be what was committed, with the security headers.
-      # A query string unique to this run bypasses Cloudflare's edge cache,
-      # which can serve the previous version for over a minute.
+      # A query string unique to this run bypasses Cloudflare's edge cache.
+      # A new version also rolls out gradually, so back-to-back requests can
+      # be answered by different versions: require three matches in a row.
       - name: Verify the deployment
         run: |
           url="$SITE/app.js?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT"
-          for _ in $(seq 60); do
-            curl -fsS "$url" | cmp -s - public/app.js && break
+          streak=0
+          for _ in $(seq 90); do
+            if curl -fsS "$url" | cmp -s - public/app.js; then streak=$((streak + 1)); else streak=0; fi
+            [ "$streak" -ge 3 ] && break
             sleep 5
           done
-          curl -fsS "$url" | cmp - public/app.js
+          if [ "$streak" -lt 3 ]; then
+            echo "served app.js did not settle on the committed version within 7.5 minutes" >&2
+            exit 1
+          fi
           headers=$(curl -fsSI "$SITE/")
           grep -qi "^content-security-policy: default-src 'self'" <<<"$headers"
           grep -qi "^x-content-type-options: nosniff" <<<"$headers"
