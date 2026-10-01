@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Refuse commit messages that credit a co-author or a tool.
+exec bash "$(git rev-parse --show-toplevel)/scripts/check-identity.sh" message "$1"

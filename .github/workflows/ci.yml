@@ -23,6 +23,17 @@ concurrency:
 # stays small.
 
 jobs:
+  identity:
+    name: Contributor identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          # On pull requests check the branch itself, not GitHub's synthetic merge commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - run: bash scripts/check-identity.sh history
+
   rust:
     name: Checks, lint, tests and devnet smoke (Linux)
     runs-on: ubuntu-latest

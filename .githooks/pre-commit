@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Refuse to commit under any identity other than the one in AGENTS.md, or to
+# commit a text file with a control character in it.
+set -e
+top="$(git rev-parse --show-toplevel)"
+bash "$top/scripts/check-identity.sh" ident
+bash "$top/scripts/check-text-files.sh" --staged

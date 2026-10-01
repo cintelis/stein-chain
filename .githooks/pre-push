@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Last check before anything reaches GitHub: the whole history being pushed.
+exec bash "$(git rev-parse --show-toplevel)/scripts/check-identity.sh" history
