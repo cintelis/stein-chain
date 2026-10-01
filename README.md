@@ -14,6 +14,7 @@ A post-quantum layer-1 blockchain. Native token: **STEIN**.
 - BFT proof of stake (planned), QUIC with post-quantum TLS 1.3 (planned).
 
 Protocol design, security rules, measured performance and hardware: **[docs/SPEC.md](docs/SPEC.md)**.
+Constraints that keep the protocol shardable later: **[docs/SHARD-READY.md](docs/SHARD-READY.md)**.
 
 ## Status
 

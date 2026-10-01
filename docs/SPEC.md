@@ -446,10 +446,11 @@ own, and only the small consensus core needs to be a strong, trusted box:
   If a validator runs short of CPU, it hands batches to worker machines it
   runs itself, instead of upgrading to a larger CPU.
 - **Archive:** object storage, not validator disk.
-- **Protocol-level sharding is not planned for v1.** Cross-shard transfers and
-  splitting validators across shards add a lot of complexity and risk. The
-  scaling path past ~5,000 TPS is FN-DSA, STARK signature aggregation and
-  validity rollups (§12).
+- **Protocol-level sharding is not planned for v1**, but the protocol is kept
+  **shard-ready**: see [SHARD-READY.md](SHARD-READY.md) for the target model,
+  the invariants every change must keep, and the gaps to close before testnet.
+  The scaling path past ~5,000 TPS is FN-DSA, STARK signature aggregation and
+  validity rollups (§12). Validity proofs are a prerequisite for sharding.
 
 ### 10.4 Hardware (revised)
 
@@ -500,11 +501,19 @@ Cloudflare **does** fit the edges:
 | 0 | Spec (this document) | done |
 | 1 | Single-node devnet: crypto, transactions, state, block log, RPC, CLI wallet | **done** |
 | 1.1 | Algorithm-agile keys, ML-DSA-44 default, verification cache, 6 h retention, bounded key cache | **done** |
-| 2 | Hardening: fuzzing, property tests, RocksDB storage (state on disk), JMT state, RPC rate limits, archive offload to R2 | next |
+| 2 | Hardening: fuzzing, property tests, RocksDB storage (state on disk), JMT state **keyed by address nibbles**, RPC rate limits, archive offload to R2 | next |
+| 2.1 | Shard-readiness gaps ([SHARD-READY.md](SHARD-READY.md) §5): supply < 2¹²⁷, fee pool, `version` fields, `shard_id: 0` in RPC | before testnet |
 | 3 | P2P: QUIC + PQ TLS, transaction gossip, **compact block propagation**, RPC-node role | |
-| 4 | Consensus: Malachite + ML-DSA votes, staking, slashing, epochs, checkpoints | |
+| 4 | Consensus: Malachite + ML-DSA votes, staking, slashing, epochs, checkpoints. **Formal model** of the consensus protocol (Quint/TLA+, model-checked for safety). **Deterministic simulation testing**: the whole network in one process with injected crashes, partitions, delays and Byzantine validators, run millions of times per change | |
 | 5 | Public testnet, faucet, **steinscan explorer**, wallet SDK (TypeScript/Rust), WebSocket subscriptions | |
 | 6 | Audits ×2, bug bounty, multi-region load tests, mainnet genesis ceremony | |
+
+**Reliability targets.** Safety (never finalizing conflicting blocks, never
+creating or losing funds) is **absolute**: established by the formal model and
+tested by simulation, never budgeted. Liveness (finality keeps advancing) is
+targeted at **99.999%**, about 5 minutes of stalled finality per year. That
+can only be demonstrated by running a decentralised testnet and then mainnet
+over time, not by testing alone.
 | later | FN-DSA-512 accounts, STARK signature aggregation, smart contracts (WASM VM), light clients | |
 
 ### 11.1 steinscan (block explorer) [planned, phase 5]
