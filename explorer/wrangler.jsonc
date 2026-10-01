@@ -4,6 +4,13 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "steinscan",
   "compatibility_date": "2026-09-30",
+  // steinscan.io is canonical; www serves the same site. The workers.dev
+  // address stays as a fallback.
+  "routes": [
+    { "pattern": "steinscan.io", "custom_domain": true },
+    { "pattern": "www.steinscan.io", "custom_domain": true }
+  ],
+  "workers_dev": true,
   "assets": {
     "directory": "./public",
     "not_found_handling": "single-page-application"
