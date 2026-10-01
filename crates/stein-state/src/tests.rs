@@ -410,3 +410,51 @@ fn accounts_on_different_schemes_share_a_block() {
     follower.import_block(&b2).expect("b2");
     assert_eq!(follower.state_root(), leader.state_root());
 }
+
+/// FN-DSA test network (SPEC §3.5). Runs only in builds with
+/// `stein-crypto/fn-dsa-experimental`; a standard build has no such scheme.
+#[test]
+fn fn_dsa_accounts_work_on_the_test_network_only() {
+    let Some(fn_dsa) = stein_crypto::Scheme::fn_dsa_draft() else {
+        return;
+    };
+    let n = net();
+    let frank = SecretKey::from_seed(fn_dsa, &[6; 32]).expect("key");
+
+    let mut test_net = n.genesis.clone();
+    test_net.params.tx_schemes.push(fn_dsa);
+    assert!(test_net.is_experimental() && !n.genesis.is_experimental());
+    let mut leader = State::from_genesis(&test_net).expect("genesis");
+    let mut follower = State::from_genesis(&test_net).expect("genesis");
+
+    let (b1, _) = produce(
+        &mut leader,
+        &n,
+        vec![transfer(&n.alice, frank.address(), 10 * ONE_STEIN, 0, true)],
+    );
+    let first = transfer(&frank, n.bob.address(), ONE_STEIN, 0, true);
+    let second = transfer(&frank, n.bob.address(), ONE_STEIN, 1, false);
+    // 121-byte body + option tag + tagged 897-byte key + tagged 666-byte signature.
+    assert_eq!((first.encoded_len(), second.encoded_len()), (1687, 789));
+    let (b2, rejected) = produce(&mut leader, &n, vec![first.clone(), second]);
+    assert!(rejected.is_empty(), "{rejected:?}");
+    follower.import_block(&b1).expect("b1");
+    follower.import_block(&b2).expect("b2");
+    assert_eq!(follower.state_root(), leader.state_root());
+    assert_eq!(leader.account(&frank.address()).expect("frank").nonce, 2);
+
+    // The same transaction on a standard network is refused at the door.
+    let standard = State::from_genesis(&n.genesis).expect("genesis");
+    assert_eq!(
+        standard.check_transaction(&first, None),
+        Err(TxError::UnsupportedScheme)
+    );
+
+    // And no genesis may give validators an experimental scheme.
+    let mut bad = test_net.clone();
+    bad.params.validator_schemes.push(fn_dsa);
+    assert!(matches!(
+        State::from_genesis(&bad),
+        Err(GenesisError::ExperimentalValidatorScheme(_))
+    ));
+}

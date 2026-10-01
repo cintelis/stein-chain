@@ -83,6 +83,25 @@ jobs:
       - run: cargo build --workspace --locked --bins
       - run: bash scripts/smoke-devnet.sh target/debug
 
+  fn-dsa:
+    name: FN-DSA test network (experimental build)
+    # The experimental build (SPEC §3.5): FN-DSA-512 per the draft FIPS 206,
+    # compiled in only with stein-crypto's `fn-dsa-experimental` feature. The
+    # standard build is checked in the jobs above and must not contain it.
+    runs-on: ubuntu-latest
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      FEATURES: stein-crypto/fn-dsa-experimental
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          version=$(sed -nE 's/^channel *= *"(.*)"$/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$version" --profile minimal --component clippy
+      - run: cargo clippy --workspace --all-targets --locked --features "$FEATURES" -- -D warnings
+      - run: cargo test --workspace --locked --features "$FEATURES"
+      - run: cargo build --workspace --locked --bins --features "$FEATURES"
+      - run: bash scripts/smoke-fn-dsa.sh target/debug
+
   advisories:
     name: Dependency advisories (RustSec)
     runs-on: ubuntu-latest

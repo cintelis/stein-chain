@@ -34,8 +34,9 @@ const SIGNING_PREFIX: &[u8; 12] = b"STEIN-SIG-v1";
 
 /// A signature scheme. The discriminant is the on-chain tag (SPEC §3.4).
 ///
-/// Tag 3 is reserved for FN-DSA-512 and is deliberately absent until FIPS 206
-/// is published and a stable implementation exists.
+/// Tag 3 is FN-DSA-512 per the **draft** FIPS 206. It exists only in builds
+/// with the `fn-dsa-experimental` feature, for the FN-DSA test network
+/// (SPEC §3.5); in every other build tag 3 does not decode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(u8)]
 pub enum Scheme {
@@ -44,11 +45,42 @@ pub enum Scheme {
     MlDsa44 = 1,
     /// ML-DSA-65 (FIPS 204), NIST category 3.
     MlDsa65 = 2,
+    /// FN-DSA-512 (Falcon), draft FIPS 206, NIST category 1. EXPERIMENTAL:
+    /// test network only, never mainnet.
+    #[cfg(feature = "fn-dsa-experimental")]
+    FnDsa512Draft = 3,
 }
 
 impl Scheme {
     /// Every scheme this build supports.
+    #[cfg(not(feature = "fn-dsa-experimental"))]
     pub const ALL: [Scheme; 2] = [Scheme::MlDsa44, Scheme::MlDsa65];
+    /// Every scheme this build supports.
+    #[cfg(feature = "fn-dsa-experimental")]
+    pub const ALL: [Scheme; 3] = [Scheme::MlDsa44, Scheme::MlDsa65, Scheme::FnDsa512Draft];
+
+    /// FN-DSA-512 (draft FIPS 206) if this build includes it, else `None`.
+    /// Lets the rest of the workspace offer the FN-DSA test network without
+    /// feature flags of its own: a standard build simply has no such scheme.
+    pub const fn fn_dsa_draft() -> Option<Scheme> {
+        #[cfg(feature = "fn-dsa-experimental")]
+        {
+            Some(Scheme::FnDsa512Draft)
+        }
+        #[cfg(not(feature = "fn-dsa-experimental"))]
+        {
+            None
+        }
+    }
+
+    /// Whether the scheme is experimental: never acceptable for mainnet.
+    pub const fn is_experimental(self) -> bool {
+        match self {
+            Self::MlDsa44 | Self::MlDsa65 => false,
+            #[cfg(feature = "fn-dsa-experimental")]
+            Self::FnDsa512Draft => true,
+        }
+    }
 
     /// The on-chain tag.
     pub const fn tag(self) -> u8 {
@@ -65,6 +97,8 @@ impl Scheme {
         match self {
             Self::MlDsa44 => "ml-dsa-44",
             Self::MlDsa65 => "ml-dsa-65",
+            #[cfg(feature = "fn-dsa-experimental")]
+            Self::FnDsa512Draft => "fn-dsa-512-draft",
         }
     }
 
@@ -73,6 +107,8 @@ impl Scheme {
         match self {
             Self::MlDsa44 => 1312,
             Self::MlDsa65 => 1952,
+            #[cfg(feature = "fn-dsa-experimental")]
+            Self::FnDsa512Draft => crate::fn_dsa_draft::PUBLIC_KEY_LEN,
         }
     }
 
@@ -81,20 +117,23 @@ impl Scheme {
         match self {
             Self::MlDsa44 => 2420,
             Self::MlDsa65 => 3309,
+            #[cfg(feature = "fn-dsa-experimental")]
+            Self::FnDsa512Draft => crate::fn_dsa_draft::SIGNATURE_LEN,
         }
     }
 
-    fn signing(self) -> &'static PqdsaSigningAlgorithm {
+    /// The AWS-LC algorithms for ML-DSA schemes; `None` for FN-DSA.
+    fn aws_lc(
+        self,
+    ) -> Option<(
+        &'static PqdsaSigningAlgorithm,
+        &'static PqdsaVerificationAlgorithm,
+    )> {
         match self {
-            Self::MlDsa44 => &ML_DSA_44_SIGNING,
-            Self::MlDsa65 => &ML_DSA_65_SIGNING,
-        }
-    }
-
-    fn verification(self) -> &'static PqdsaVerificationAlgorithm {
-        match self {
-            Self::MlDsa44 => &ML_DSA_44,
-            Self::MlDsa65 => &ML_DSA_65,
+            Self::MlDsa44 => Some((&ML_DSA_44_SIGNING, &ML_DSA_44)),
+            Self::MlDsa65 => Some((&ML_DSA_65_SIGNING, &ML_DSA_65)),
+            #[cfg(feature = "fn-dsa-experimental")]
+            Self::FnDsa512Draft => None,
         }
     }
 }
@@ -313,18 +352,34 @@ impl PublicKey {
 /// recently active account so the cost is paid once, not once per transaction.
 #[derive(Clone)]
 pub struct VerifyingKey {
-    parsed: Arc<ParsedPublicKey>,
+    parsed: Parsed,
     scheme: Scheme,
     address: Address,
+}
+
+#[derive(Clone)]
+enum Parsed {
+    AwsLc(Arc<ParsedPublicKey>),
+    #[cfg(feature = "fn-dsa-experimental")]
+    FnDsa(crate::fn_dsa_draft::SharedVerifier),
 }
 
 impl VerifyingKey {
     /// Parses `key`.
     pub fn new(key: &PublicKey) -> Result<Self, KeyError> {
-        let parsed = ParsedPublicKey::new(key.scheme.verification(), key.as_bytes())
-            .map_err(|_| KeyError::Crypto)?;
+        let parsed = match key.scheme.aws_lc() {
+            Some((_, verification)) => Parsed::AwsLc(Arc::new(
+                ParsedPublicKey::new(verification, key.as_bytes()).map_err(|_| KeyError::Crypto)?,
+            )),
+            #[cfg(feature = "fn-dsa-experimental")]
+            None => Parsed::FnDsa(Arc::new(crate::fn_dsa_draft::Verifier::new(
+                key.as_bytes(),
+            )?)),
+            #[cfg(not(feature = "fn-dsa-experimental"))]
+            None => return Err(KeyError::UnsupportedScheme),
+        };
         Ok(Self {
-            parsed: Arc::new(parsed),
+            parsed,
             scheme: key.scheme,
             address: key.address(),
         })
@@ -351,9 +406,13 @@ impl VerifyingKey {
         if signature.scheme != self.scheme {
             return Err(InvalidSignature);
         }
-        self.parsed
-            .verify_sig(&signing_message(domain, payload), signature.as_bytes())
-            .map_err(|_| InvalidSignature)
+        let message = signing_message(domain, payload);
+        let ok = match &self.parsed {
+            Parsed::AwsLc(key) => key.verify_sig(&message, signature.as_bytes()).is_ok(),
+            #[cfg(feature = "fn-dsa-experimental")]
+            Parsed::FnDsa(key) => key.verify(&message, signature.as_bytes()),
+        };
+        if ok { Ok(()) } else { Err(InvalidSignature) }
     }
 }
 
@@ -380,30 +439,48 @@ pub fn verify_batch(jobs: &[(&VerifyingKey, Domain, &[u8], &Signature)]) -> Resu
 
 /// A private key, held in memory.
 pub struct SecretKey {
-    pair: PqdsaKeyPair,
+    signer: Signer,
     public: PublicKey,
     verifying: VerifyingKey,
+}
+
+enum Signer {
+    AwsLc(PqdsaKeyPair),
+    #[cfg(feature = "fn-dsa-experimental")]
+    FnDsa(crate::fn_dsa_draft::Signer),
 }
 
 impl SecretKey {
     /// Generates a fresh key from the operating system's random source.
     pub fn generate(scheme: Scheme) -> Result<Self, KeyError> {
-        let pair = PqdsaKeyPair::generate(scheme.signing()).map_err(|_| KeyError::Crypto)?;
-        Self::from_pair(scheme, pair)
+        let mut seed = [0u8; SEED_LEN];
+        aws_lc_rs::rand::fill(&mut seed).map_err(|_| KeyError::Crypto)?;
+        let key = Self::from_seed(scheme, &seed);
+        zeroize::Zeroize::zeroize(&mut seed);
+        key
     }
 
-    /// Derives a key deterministically from a FIPS 204 seed. The seed *is* the
-    /// private key.
+    /// Derives a key deterministically from a 32-byte seed (for ML-DSA, the
+    /// FIPS 204 seed). The seed *is* the private key.
     pub fn from_seed(scheme: Scheme, seed: &[u8; SEED_LEN]) -> Result<Self, KeyError> {
-        let pair = PqdsaKeyPair::from_seed(scheme.signing(), seed).map_err(|_| KeyError::Crypto)?;
-        Self::from_pair(scheme, pair)
-    }
-
-    fn from_pair(scheme: Scheme, pair: PqdsaKeyPair) -> Result<Self, KeyError> {
-        let public = PublicKey::from_bytes(scheme, pair.public_key().as_ref())?;
+        let (signer, public) = match scheme.aws_lc() {
+            Some((signing, _)) => {
+                let pair = PqdsaKeyPair::from_seed(signing, seed).map_err(|_| KeyError::Crypto)?;
+                let public = pair.public_key().as_ref().to_vec();
+                (Signer::AwsLc(pair), public)
+            }
+            #[cfg(feature = "fn-dsa-experimental")]
+            None => {
+                let (signer, public) = crate::fn_dsa_draft::Signer::from_seed(seed)?;
+                (Signer::FnDsa(signer), public)
+            }
+            #[cfg(not(feature = "fn-dsa-experimental"))]
+            None => return Err(KeyError::UnsupportedScheme),
+        };
+        let public = PublicKey::from_bytes(scheme, &public)?;
         let verifying = VerifyingKey::new(&public)?;
         Ok(Self {
-            pair,
+            signer,
             public,
             verifying,
         })
@@ -436,14 +513,21 @@ impl SecretKey {
     /// therefore be identified by a hash that covers a signature.
     pub fn sign(&self, domain: Domain, payload: &[u8]) -> Result<Signature, KeyError> {
         let scheme = self.scheme();
-        let mut signature = vec![0u8; scheme.signature_len()];
-        let written = self
-            .pair
-            .sign(&signing_message(domain, payload), &mut signature)
-            .map_err(|_| KeyError::Crypto)?;
-        if written != signature.len() {
-            return Err(KeyError::Crypto);
-        }
+        let message = signing_message(domain, payload);
+        let signature = match &self.signer {
+            Signer::AwsLc(pair) => {
+                let mut signature = vec![0u8; scheme.signature_len()];
+                let written = pair
+                    .sign(&message, &mut signature)
+                    .map_err(|_| KeyError::Crypto)?;
+                if written != signature.len() {
+                    return Err(KeyError::Crypto);
+                }
+                signature
+            }
+            #[cfg(feature = "fn-dsa-experimental")]
+            Signer::FnDsa(signer) => signer.sign(&message)?,
+        };
         Ok(Signature {
             scheme,
             bytes: signature.into(),
@@ -536,6 +620,75 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "fn-dsa-experimental"))]
+    #[test]
+    fn a_standard_build_has_no_fn_dsa() {
+        assert_eq!(Scheme::fn_dsa_draft(), None);
+        assert!("fn-dsa-512-draft".parse::<Scheme>().is_err());
+        assert_eq!(Scheme::from_tag(3), None);
+    }
+
+    #[cfg(feature = "fn-dsa-experimental")]
+    #[test]
+    fn fn_dsa_draft_keys_sign_and_verify() {
+        let fn_dsa = Scheme::fn_dsa_draft().expect("experimental build");
+        assert_eq!((fn_dsa.tag(), fn_dsa.name()), (3, "fn-dsa-512-draft"));
+        assert!(fn_dsa.is_experimental() && !Scheme::MlDsa44.is_experimental());
+        assert_eq!(
+            (fn_dsa.public_key_len(), fn_dsa.signature_len()),
+            (897, 666)
+        );
+
+        let (a, b) = (key(fn_dsa, 1), key(fn_dsa, 2));
+        assert_eq!(
+            key(fn_dsa, 1).public_key(),
+            a.public_key(),
+            "seeds are deterministic"
+        );
+        assert_ne!(a.address(), key(Scheme::MlDsa44, 1).address());
+
+        let sig = a.sign(Domain::Transaction, b"pay 5").expect("sign");
+        let again = a.sign(Domain::Transaction, b"pay 5").expect("sign");
+        assert_ne!(sig, again, "signing is randomised");
+        let vk = a.verifying_key();
+        assert!(vk.verify(Domain::Transaction, b"pay 5", &sig).is_ok());
+        assert!(vk.verify(Domain::Transaction, b"pay 5", &again).is_ok());
+        assert!(vk.verify(Domain::Transaction, b"pay 6", &sig).is_err());
+        assert!(vk.verify(Domain::Vote, b"pay 5", &sig).is_err());
+        assert!(
+            b.verifying_key()
+                .verify(Domain::Transaction, b"pay 5", &sig)
+                .is_err()
+        );
+
+        // Wire round trip with its tag.
+        let wire = borsh::to_vec(a.public_key()).expect("enc");
+        assert_eq!(wire[0], 3);
+        assert_eq!(
+            &PublicKey::try_from_slice(&wire).expect("dec"),
+            a.public_key()
+        );
+    }
+
+    #[cfg(feature = "fn-dsa-experimental")]
+    #[test]
+    fn fn_dsa_and_ml_dsa_never_cross() {
+        let fn_dsa = Scheme::fn_dsa_draft().expect("experimental build");
+        let (f, m) = (key(fn_dsa, 5), key(Scheme::MlDsa44, 5));
+        let f_sig = f.sign(Domain::Transaction, b"m").expect("sign");
+        let m_sig = m.sign(Domain::Transaction, b"m").expect("sign");
+        assert!(
+            m.verifying_key()
+                .verify(Domain::Transaction, b"m", &f_sig)
+                .is_err()
+        );
+        assert!(
+            f.verifying_key()
+                .verify(Domain::Transaction, b"m", &m_sig)
+                .is_err()
+        );
+    }
+
     #[test]
     fn unknown_scheme_tags_do_not_decode() {
         let k = key(Scheme::MlDsa44, 3);
@@ -544,7 +697,7 @@ mod tests {
             PublicKey::try_from_slice(&wire).expect("dec"),
             *k.public_key()
         );
-        wire[0] = 3; // reserved for FN-DSA-512, not supported
+        wire[0] = 4; // unassigned
         assert!(PublicKey::try_from_slice(&wire).is_err());
         assert!("fn-dsa-512".parse::<Scheme>().is_err());
     }

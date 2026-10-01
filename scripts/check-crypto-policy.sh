@@ -10,8 +10,10 @@
 #        - other crypto backends (ring, OpenSSL, BoringSSL, native-tls);
 #        - other ML-DSA implementations: one audited code path, not two that
 #          could disagree about what verifies — a consensus split;
-#        - FN-DSA / Falcon implementations, until FIPS 206 is final and the
-#          scheme is enabled deliberately (SPEC §3.4, tag 3 reserved).
+#        - FN-DSA / Falcon implementations in any standard build. The one
+#          recorded exception (SPEC §3.5): the `fn-dsa` crate at exactly 0.4.0,
+#          reachable ONLY through stein-crypto's `fn-dsa-experimental`
+#          feature, for the FN-DSA test network. Checked in section 1b.
 #
 #   2. Source. AWS-LC necessarily *contains* classical algorithms; what matters is
 #      that nothing in this workspace selects one. Library and binary code
@@ -35,7 +37,7 @@ p224 p256 p384 p521 k256 secp256k1
 x25519-dalek curve25519-dalek
 bls12_381 blst
 ml-dsa fips204 pqcrypto-dilithium pqcrypto-mldsa pqcrypto-traits oqs oqs-sys
-fn-dsa fn-dsa-sign fn-dsa-vrfy falcon-rs pqcrypto-falcon
+fn-dsa fn-dsa-sign fn-dsa-vrfy fn-dsa-kgen fn-dsa-comm falcon-rs pqcrypto-falcon
 '
 built=$(cargo tree --workspace --locked --target all --edges normal,build,dev --prefix none --format '{p}' \
   | awk '{print $1}' | sort -u)
@@ -50,6 +52,32 @@ for package in $forbidden_packages; do
     fail=1
   fi
 done
+
+# --- 1b. The FN-DSA exception, held to exactly its size --------------------------
+# With the experimental feature on, fn-dsa may appear, at exactly 0.4.0 (a
+# different draft implementation could disagree about which signatures verify,
+# a consensus split), and nothing but stein-crypto may depend on it.
+experimental=$(cargo tree --workspace --locked --target all --edges normal,build \
+  --features stein-crypto/fn-dsa-experimental --prefix none --format '{p}' | awk '{print $1, $2}' | sort -u)
+fn_dsa=$(grep -E '^fn-dsa ' <<<"$experimental" || true)
+if [ "$fn_dsa" != "fn-dsa v0.4.0" ]; then
+  echo "crypto-policy: the experimental build must contain fn-dsa v0.4.0 exactly, found: ${fn_dsa:-none}" >&2
+  fail=1
+fi
+for other in falcon-rs pqcrypto-falcon pqcrypto-mldsa ml-dsa ring; do
+  if grep -qE "^$other " <<<"$experimental"; then
+    echo "crypto-policy: forbidden package in the experimental build: $other" >&2
+    fail=1
+  fi
+done
+dependents=$(cargo tree --workspace --locked --target all --edges normal,build \
+    --features stein-crypto/fn-dsa-experimental -i fn-dsa@0.4.0 --depth 1 --prefix none --format '{p}' \
+  | awk '{print $1}' | sort -u | grep -vx fn-dsa || true)
+if [ "$dependents" != "stein-crypto" ]; then
+  echo "crypto-policy: fn-dsa may be used by stein-crypto only, but is used by:" >&2
+  echo "$dependents" | sed 's/^/               /' >&2
+  fail=1
+fi
 
 # --- 2. Source -------------------------------------------------------------------
 # Identifiers from aws-lc-rs and rustls. Post-quantum hybrids (X25519MLKEM768)

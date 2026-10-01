@@ -37,6 +37,7 @@ fn run(scheme: Scheme) {
     let params = ChainParams {
         max_block_txs: SENDERS as u32,
         max_block_bytes: 64 << 20,
+        tx_schemes: Scheme::ALL.to_vec(),
         ..ChainParams::default()
     };
     let genesis = Genesis {

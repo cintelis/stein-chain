@@ -72,7 +72,7 @@ ceiling of one node's CPU, not network throughput (see §10).
 | ML-DSA-65 | 3,432 B | baseline in v0.1 |
 | **ML-DSA-44** | **2,543 B (−26%)** | **adopted as devnet default** |
 | zstd level 19 on whole transactions | −2.7% | **rejected**: signatures are random and compress to 99.9% |
-| FN-DSA-512 (Falcon), `fn-dsa` 0.4 | ~788 B (−77%); verify ~66,000 /s per core | **deferred**: FIPS 206 not yet published (as of July 2026); the implementation warns that keys and signatures may stop being accepted by later versions. Tag 3 reserved (§3.4). |
+| FN-DSA-512 (Falcon), draft FIPS 206, `fn-dsa` 0.4.0 | **789 B (−69% vs ML-DSA-44)**; verify ~66,000 /s per core; block import ~75,600 tx/s cold, ~111,300 warm | **opt-in, FN-DSA test network only** (§3.5). Not a mainnet candidate until FIPS 206 is final: the implementation warns that keys and signatures may stop being accepted by later versions. |
 | STARK aggregation of all signatures in a block | ~120 B + amortised proof | research (§12) |
 
 ---
@@ -119,7 +119,7 @@ Every public key and signature carries a one-byte **scheme tag**:
 |---|---|---|
 | 1 | ML-DSA-44 | accepted; default for new keys |
 | 2 | ML-DSA-65 | accepted |
-| 3 | FN-DSA-512 | **reserved**: does not decode in this build |
+| 3 | FN-DSA-512, draft FIPS 206 (`fn-dsa-512-draft`) | **experimental**: exists only in builds with the `fn-dsa-experimental` feature, accepted only on the FN-DSA test network (§3.5); does not decode in standard builds |
 | 4–255 | — | unassigned |
 
 - Wire form: `tag ‖ bytes`, with the byte length fixed by the tag. There is no
@@ -136,6 +136,42 @@ Every public key and signature carries a one-byte **scheme tag**:
   finding a SHA-256 collision, classically or quantumly. NIST approves it for
   general use. Category 3 (ML-DSA-65) remains available for accounts holding
   large balances.
+
+### 3.5 FN-DSA test network (experimental) [built]
+A **separate network** to measure FN-DSA before its standard is final. It
+never becomes mainnet.
+
+**Opting in takes three explicit steps:**
+
+| Step | What it means |
+|---|---|
+| 1. Build with `--features stein-crypto/fn-dsa-experimental` | Standard builds contain no FN-DSA code: `fn-dsa-512-draft` does not parse and tag 3 does not decode. |
+| 2. `stein-node init --enable-fn-dsa` | Creates a genesis whose `tx_schemes` include tag 3. Defaults to chain id **31338**, separate from the standard devnet's 31337. |
+| 3. Choose an FN-DSA key: `stein keygen --scheme fn-dsa-512-draft` | Accounts opt in one by one. ML-DSA accounts on the same network keep working, and the two kinds transfer freely. |
+
+**Fences:**
+- **Validators never use FN-DSA.** Genesis validation rejects an experimental
+  scheme in `validator_schemes` (`ExperimentalValidatorScheme`).
+- **A standard node cannot join.** Its genesis does not parse, because the
+  scheme name is unknown to it.
+- **One implementation, pinned exactly** (`fn-dsa = "=0.4.0"`): two draft
+  implementations could disagree about which signatures verify.
+  `scripts/check-crypto-policy.sh` allows `fn-dsa` only in the experimental
+  build, at that version, and used by `stein-crypto` alone.
+- The name **`-draft`** appears in key files, JSON and the CLI, so no one
+  mistakes these keys for final-standard FN-DSA.
+- **Keys from seeds:** `fn-dsa` has no seed-to-key function, so a key is
+  generated deterministically from the 32-byte seed through a BLAKE3 XOF.
+  These seed files are Stein-specific, not portable to other FN-DSA wallets.
+- **Network lifetime:** if FIPS 206 changes the algorithm or encodings, this
+  network is reset, not migrated.
+
+**Measured** (§2.2): transfers of 789 bytes (1,687 with key registration),
+verification ~6.5× faster than ML-DSA-44, and block import about 2× faster.
+
+Tests: `fn_dsa_draft_keys_sign_and_verify`, `fn_dsa_and_ml_dsa_never_cross`,
+`fn_dsa_accounts_work_on_the_test_network_only`, `a_standard_build_has_no_fn_dsa`,
+`scripts/smoke-fn-dsa.sh` (CI job *FN-DSA test network*).
 
 ---
 
@@ -501,6 +537,8 @@ Cloudflare **does** fit the edges:
 | 0 | Spec (this document) | done |
 | 1 | Single-node devnet: crypto, transactions, state, block log, RPC, CLI wallet | **done** |
 | 1.1 | Algorithm-agile keys, ML-DSA-44 default, verification cache, 6 h retention, bounded key cache | **done** |
+| 1.2 | Follower nodes over HTTPS with PQ TLS; Docker validator plus Cloudflare follower | **done** |
+| 1.3 | FN-DSA test network (experimental, §3.5) | **done** |
 | 2 | Hardening: fuzzing, property tests, RocksDB storage (state on disk), JMT state **keyed by address nibbles**, RPC rate limits, archive offload to R2 | next |
 | 2.1 | Shard-readiness gaps ([SHARD-READY.md](SHARD-READY.md) §5): supply < 2¹²⁷, fee pool, `version` fields, `shard_id: 0` in RPC | before testnet |
 | 3 | P2P: QUIC + PQ TLS, transaction gossip, **compact block propagation**, RPC-node role | |

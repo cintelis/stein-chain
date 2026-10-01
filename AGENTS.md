@@ -49,7 +49,7 @@ Stein Chain is a post-quantum layer-1 blockchain (token: STEIN). Read before cha
 
 ## Rules of the codebase
 
-- **Post-quantum only.** No classical signature or key exchange, no second ML-DSA implementation, no FN-DSA until it is enabled on purpose. `scripts/check-crypto-policy.sh` enforces it.
+- **Post-quantum only.** No classical signature or key exchange, no second ML-DSA implementation. FN-DSA exists only behind stein-crypto's `fn-dsa-experimental` feature, for the FN-DSA test network (SPEC §3.5): never in a standard build, never for validators, never for mainnet. `scripts/check-crypto-policy.sh` enforces it. CI tests both builds.
 - **Consensus code never panics and never wraps.** Use checked arithmetic; clippy's `arithmetic_side_effects` is on. `unsafe_code` is forbidden.
 - **Everything hashed or signed is Borsh-encoded**, with a BLAKE3 derive-key context of its own.
 - **Validators verify everything.** Never take a proposer's claim on trust; a block without witnesses is rejected.

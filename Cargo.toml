@@ -61,3 +61,14 @@ strip = true
 # even in debug builds so devnet behaves like the real thing.
 [profile.dev.package.blake3]
 opt-level = 3
+
+# FN-DSA (experimental feature only): key generation keeps large buffers on
+# the stack, which unoptimised code can overflow.
+[profile.dev.package.fn-dsa-kgen]
+opt-level = 3
+[profile.dev.package.fn-dsa-sign]
+opt-level = 3
+[profile.dev.package.fn-dsa-vrfy]
+opt-level = 3
+[profile.dev.package.fn-dsa-comm]
+opt-level = 3

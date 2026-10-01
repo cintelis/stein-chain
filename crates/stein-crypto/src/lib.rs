@@ -8,6 +8,8 @@
 //! never be replayed as a hash for another (SPEC §3).
 
 mod address;
+#[cfg(feature = "fn-dsa-experimental")]
+mod fn_dsa_draft;
 mod hash;
 mod keys;
 mod seed_file;

@@ -65,6 +65,9 @@ pub struct Status {
     /// Why a follower stopped following, if it did.
     #[serde(default)]
     pub sync_error: Option<String>,
+    /// Signature schemes accounts may use on this network.
+    #[serde(default)]
+    pub tx_schemes: Vec<stein_crypto::Scheme>,
 }
 
 async fn status(AxumState(node): AxumState<Arc<Node>>) -> Json<Status> {
@@ -87,6 +90,7 @@ async fn status(AxumState(node): AxumState<Arc<Node>>) -> Json<Status> {
             Role::Validator(_) => None,
         },
         sync_error: node.sync_error.lock().clone(),
+        tx_schemes: state.params().tx_schemes.clone(),
     })
 }
 

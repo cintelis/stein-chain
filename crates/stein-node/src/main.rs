@@ -24,15 +24,22 @@ struct Cli {
 enum Command {
     /// Create a validator key, a faucet key and a genesis document.
     Init {
-        /// Network id. Pick a value no other network uses.
-        #[arg(long, default_value_t = 31_337)]
-        chain_id: u64,
+        /// Network id. Pick a value no other network uses. Default: 31337, or
+        /// 31338 for the FN-DSA test network.
+        #[arg(long)]
+        chain_id: Option<u64>,
         /// STEIN allocated to the faucet account.
         #[arg(long, default_value_t = 1_000_000_000)]
         faucet_stein: u64,
-        /// Signature scheme for the validator and faucet keys.
+        /// Signature scheme for the faucet key (and the validator key, unless
+        /// it is experimental: validators always use ML-DSA).
         #[arg(long, default_value_t = Scheme::MlDsa44)]
         scheme: Scheme,
+        /// Create the FN-DSA TEST NETWORK: accounts may also use FN-DSA-512 per
+        /// the draft FIPS 206. Experimental, never for mainnet; needs a build
+        /// with `--features stein-crypto/fn-dsa-experimental`.
+        #[arg(long)]
+        enable_fn_dsa: bool,
     },
     /// Run the node as the validator.
     Run {
@@ -72,7 +79,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             chain_id,
             faucet_stein,
             scheme,
-        } => init(&cli.data_dir, chain_id, faucet_stein, scheme),
+            enable_fn_dsa,
+        } => init(&cli.data_dir, chain_id, faucet_stein, scheme, enable_fn_dsa),
         Command::Run { rpc } => serve(Node::open(&cli.data_dir)?, rpc).await,
         Command::Follow {
             leader,
@@ -90,10 +98,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn init(
     dir: &std::path::Path,
-    chain_id: u64,
+    chain_id: Option<u64>,
     faucet_stein: u64,
     scheme: Scheme,
+    enable_fn_dsa: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mut params = ChainParams::default();
+    if enable_fn_dsa {
+        let fn_dsa = Scheme::fn_dsa_draft().ok_or(
+            "this build has no FN-DSA; rebuild with --features stein-crypto/fn-dsa-experimental",
+        )?;
+        params.tx_schemes.push(fn_dsa);
+    } else if scheme.is_experimental() {
+        return Err(
+            format!("{scheme} keys need the FN-DSA test network: add --enable-fn-dsa").into(),
+        );
+    }
+    let chain_id = chain_id.unwrap_or(if enable_fn_dsa { 31_338 } else { 31_337 });
+    let validator_scheme = if scheme.is_experimental() {
+        Scheme::MlDsa44
+    } else {
+        scheme
+    };
+
     std::fs::create_dir_all(dir)?;
     let genesis_path = dir.join(files::GENESIS);
     if genesis_path.exists() {
@@ -103,12 +130,12 @@ fn init(
         )
         .into());
     }
-    let validator = create_seed_file(&dir.join(files::VALIDATOR_SEED), scheme)?;
+    let validator = create_seed_file(&dir.join(files::VALIDATOR_SEED), validator_scheme)?;
     let faucet = create_seed_file(&dir.join("faucet.seed"), scheme)?;
     let genesis = Genesis {
         chain_id,
         genesis_time_ms: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
-        params: ChainParams::default(),
+        params,
         allocations: vec![Allocation {
             address: faucet.address(),
             amount: u128::from(faucet_stein)
@@ -122,9 +149,26 @@ fn init(
     };
     genesis.validate()?;
     std::fs::write(&genesis_path, serde_json::to_string_pretty(&genesis)?)?;
-    println!("devnet initialised in {}", dir.display());
+    if genesis.is_experimental() {
+        println!(
+            "FN-DSA TEST NETWORK initialised in {} (experimental: never mainnet)",
+            dir.display()
+        );
+    } else {
+        println!("devnet initialised in {}", dir.display());
+    }
     println!("  chain id     : {chain_id}");
-    println!("  key scheme   : {scheme}");
+    println!(
+        "  accounts     : {}",
+        genesis
+            .params
+            .tx_schemes
+            .iter()
+            .map(|s| s.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    println!("  key schemes  : validator {validator_scheme}, faucet {scheme}");
     println!("  genesis hash : {}", genesis.hash());
     println!("  validator    : {}", validator.address());
     println!(

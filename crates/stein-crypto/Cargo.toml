@@ -17,6 +17,17 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 zeroize = { workspace = true }
 
+# EXPERIMENTAL, test network only (SPEC §3.5). Not in standard builds.
+# Pinned exactly: a different draft implementation could disagree about which
+# signatures verify, which on a chain is a consensus split.
+fn-dsa = { version = "=0.4.0", optional = true }
+rand_core = { version = "0.6", features = ["getrandom"], optional = true }
+
+[features]
+# FN-DSA-512 per the draft FIPS 206, as signature scheme tag 3. Accepted only
+# on a network whose genesis lists it; never for mainnet.
+fn-dsa-experimental = ["dep:fn-dsa", "dep:rand_core"]
+
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }

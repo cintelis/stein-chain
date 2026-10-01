@@ -11,6 +11,10 @@
 #   STEIN_GENESIS_HASH=<hash> docker compose -f deploy/docker/compose.yml --profile local-follower up -d
 #       + follower B on http://127.0.0.1:8646, following A over the compose network
 #
+#   docker compose -f deploy/docker/compose.yml --profile fn-dsa up -d --build stein-fn
+#       the separate FN-DSA TEST NETWORK (chain 31338, experimental build) on
+#       http://127.0.0.1:8655: accounts may use fn-dsa-512-draft keys
+#
 # The validator's RPC has no authentication or rate limiting yet: the tunnel
 # is for a devnet only.
 
@@ -47,6 +51,24 @@ services:
       - stein-b:/data
     restart: unless-stopped
 
+  # FN-DSA test network: a separate chain from a separate, experimental image.
+  stein-fn:
+    profiles: [fn-dsa]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        CARGO_FEATURES: stein-crypto/fn-dsa-experimental
+    image: stein-node:dev-fn-dsa-experimental
+    environment:
+      STEIN_ROLE: validator
+      STEIN_ENABLE_FN_DSA: "1"
+    ports:
+      - "127.0.0.1:8655:8645"
+    volumes:
+      - stein-fn:/data
+    restart: unless-stopped
+
   tunnel:
     profiles: [tunnel]
     # cloudflared 2026.9.3, pinned by digest.
@@ -60,3 +82,4 @@ services:
 volumes:
   stein-a:
   stein-b:
+  stein-fn:

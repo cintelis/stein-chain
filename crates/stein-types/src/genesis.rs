@@ -52,6 +52,10 @@ pub enum GenesisError {
     /// A validator has zero power or a key that does not parse.
     #[error("invalid validator entry")]
     BadValidator,
+    /// Validators may only use standardised schemes, never an experimental
+    /// one (SPEC §3.5).
+    #[error("validators cannot use experimental scheme {0}")]
+    ExperimentalValidatorScheme(stein_crypto::Scheme),
     /// Two validators share a key.
     #[error("duplicate validator")]
     DuplicateValidator,
@@ -69,6 +73,12 @@ impl Genesis {
         hash(GENESIS_CONTEXT, &[&borsh::to_vec(self).unwrap_or_default()])
     }
 
+    /// Whether the network accepts an experimental scheme (the FN-DSA test
+    /// network). Such a network is never a candidate for mainnet.
+    pub fn is_experimental(&self) -> bool {
+        self.params.tx_schemes.iter().any(|s| s.is_experimental())
+    }
+
     /// Total initial supply.
     pub fn total_supply(&self) -> Option<Amount> {
         self.allocations
@@ -80,6 +90,14 @@ impl Genesis {
     pub fn validate(&self) -> Result<(), GenesisError> {
         if self.validators.is_empty() {
             return Err(GenesisError::NoValidators);
+        }
+        if let Some(s) = self
+            .params
+            .validator_schemes
+            .iter()
+            .find(|s| s.is_experimental())
+        {
+            return Err(GenesisError::ExperimentalValidatorScheme(*s));
         }
         let mut keys = BTreeSet::new();
         for v in &self.validators {
