@@ -64,8 +64,13 @@ cargo build --release --features stein-crypto/fn-dsa-experimental
 ./target/release/stein keygen --scheme fn-dsa-512-draft --out frank.seed
 ```
 
-RPC: `GET /status`, `GET /account/{address}`, `POST /tx {"raw": "<borsh hex>"}`,
-`GET /tx/{id}`, `GET /block/{height}[?witnesses=true]`.
+RPC: `GET /status`, `GET /account/{address}`, `GET /account/{address}/txs`,
+`POST /tx {"raw": "<borsh hex>"}`, `GET /tx/{id}`, `GET /blocks`, `GET /mempool`,
+`GET /block/{height}[?witnesses=true]`, and `GET /events`, a live stream of
+blocks and transactions (server-sent events).
+
+**steinscan**, the block explorer, watches it all in real time: see
+[explorer/README.md](explorer/README.md).
 
 ## Tests and benchmarks
 

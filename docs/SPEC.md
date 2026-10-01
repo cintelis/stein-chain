@@ -543,7 +543,8 @@ Cloudflare **does** fit the edges:
 | 2.1 | Shard-readiness gaps ([SHARD-READY.md](SHARD-READY.md) §5): supply < 2¹²⁷, fee pool, `version` fields, `shard_id: 0` in RPC | before testnet |
 | 3 | P2P: QUIC + PQ TLS, transaction gossip, **compact block propagation**, RPC-node role | |
 | 4 | Consensus: Malachite + ML-DSA votes, staking, slashing, epochs, checkpoints. **Formal model** of the consensus protocol (Quint/TLA+, model-checked for safety). **Deterministic simulation testing**: the whole network in one process with injected crashes, partitions, delays and Byzantine validators, run millions of times per change | |
-| 5 | Public testnet, faucet, **steinscan explorer**, wallet SDK (TypeScript/Rust), WebSocket subscriptions | |
+| 1.4 | **steinscan** live explorer; node `GET /events` (server-sent events), `/blocks`, `/mempool`, account history, CORS | **done** |
+| 5 | Public testnet, faucet, steinscan indexer (Postgres), wallet SDK (TypeScript/Rust) | |
 | 6 | Audits ×2, bug bounty, multi-region load tests, mainnet genesis ceremony | |
 
 **Reliability targets.** Safety (never finalizing conflicting blocks, never
@@ -554,7 +555,14 @@ can only be demonstrated by running a decentralised testnet and then mainnet
 over time, not by testing alone.
 | later | FN-DSA-512 accounts, STARK signature aggregation, smart contracts (WASM VM), light clients | |
 
-### 11.1 steinscan (block explorer) [planned, phase 5]
+### 11.1 steinscan (block explorer) [built: live explorer; planned: indexer]
+**Built:** `explorer/`, a static app that reads a node's RPC and follows its
+live event stream (`GET /events`). It has a live block and transaction feed
+(pending, then confirmed), network stats, search, and block, transaction and
+address pages that show each signature scheme and key registration. It is
+deployable to Cloudflare.
+
+**Planned for mainnet scale:**
 An Etherscan-style explorer: blocks, transactions, accounts, validators,
 supply and network stats.
 - **Indexer** (Rust): follows an RPC node over WebSocket and writes to

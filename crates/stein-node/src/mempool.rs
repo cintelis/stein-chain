@@ -66,6 +66,26 @@ impl Mempool {
         self.ids.is_empty()
     }
 
+    /// The queued transaction with id `id`, if any.
+    pub fn get(&self, id: &Hash) -> Option<&Transaction> {
+        if !self.ids.contains(id) {
+            return None;
+        }
+        self.by_sender
+            .values()
+            .flat_map(|q| q.values())
+            .find(|tx| tx.id() == *id)
+    }
+
+    /// Up to `limit` queued transactions.
+    pub fn pending(&self, limit: usize) -> Vec<&Transaction> {
+        self.by_sender
+            .values()
+            .flat_map(|q| q.values())
+            .take(limit)
+            .collect()
+    }
+
     /// The public key attached to `sender`'s queued key-registering
     /// transaction, if one is queued.
     pub fn queued_key(&self, sender: &Address) -> Option<PublicKey> {

@@ -14,6 +14,7 @@
 pub mod mempool;
 pub mod rpc;
 pub mod store;
+pub mod views;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -101,7 +102,13 @@ pub struct Node {
     pub role: Role,
     /// Why following stopped, if it did.
     pub sync_error: Mutex<Option<String>>,
+    /// Live events for `GET /events`. Sending never blocks: a subscriber that
+    /// falls behind misses events rather than slowing the node.
+    pub events: tokio::sync::broadcast::Sender<views::Event>,
 }
+
+/// Events buffered per subscriber before a slow one starts missing them.
+const EVENT_BUFFER: usize = 1024;
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -206,6 +213,7 @@ impl Node {
             genesis,
             role,
             sync_error: Mutex::new(None),
+            events: tokio::sync::broadcast::channel(EVENT_BUFFER).0,
         }))
     }
 
@@ -226,21 +234,31 @@ impl Node {
         .await
         .map_err(|e| e.to_string())??;
 
-        match &self.role {
+        let view = views::TxView::pending(&checked);
+        let id = match &self.role {
             Role::Validator(_) => self
                 .mempool
                 .lock()
                 .admit(checked)
-                .map_err(|e| e.to_string()),
+                .map_err(|e| e.to_string())?,
             Role::Follower(leader) => {
                 let id = leader.forward(&checked).await?;
                 // Remembered locally (never produced from), so a follow-up from
                 // a new account verifies against the key its queued first
                 // transaction registers. Pruned as blocks arrive.
                 let _ = self.mempool.lock().admit(checked);
-                Ok(id)
+                id
             }
-        }
+        };
+        let _ = self.events.send(views::Event::Pending(view));
+        Ok(id)
+    }
+
+    /// The event for `block`, if anyone is listening. Sent only after the
+    /// block is persisted and indexed, so a subscriber that reacts to it finds
+    /// the block through RPC.
+    fn block_event(&self, block: &stein_types::Block) -> Option<views::Event> {
+        (self.events.receiver_count() > 0).then(|| views::Event::Block(views::BlockView::of(block)))
     }
 
     /// Builds, persists and indexes one block if there is anything to include.
@@ -264,7 +282,11 @@ impl Node {
         let height = block.header.height;
         let count = block.bodies.len();
         // Persist before anyone can observe the new state through RPC.
+        let event = self.block_event(&block);
         self.store.write().append(block, true)?;
+        if let Some(event) = event {
+            let _ = self.events.send(event);
+        }
         let rejected: Vec<Hash> = rejected.into_iter().map(|(id, _)| id).collect();
         self.mempool.lock().prune(&state, &rejected);
         drop(state);
@@ -325,7 +347,11 @@ impl Node {
                     .write()
                     .import_block(&block)
                     .map_err(|e| NodeError::Refused(format!("block {height}: {e}")))?;
+                let event = node.block_event(&block);
                 node.store.write().append(block, true)?;
+                if let Some(event) = event {
+                    let _ = node.events.send(event);
+                }
                 applied = applied.saturating_add(1);
                 tracing::info!(height, "imported and verified block");
             }

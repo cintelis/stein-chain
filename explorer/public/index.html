@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>steinscan</title>
+  <meta name="description" content="Stein Chain block explorer: live blocks and transactions on the post-quantum STEIN network.">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src *; base-uri 'none'; form-action 'none'">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%233b5bdb'/%3E%3Cpath d='M9 21c2 2 5 3 8 2 3-1 4-4 1-5l-4-1c-3-1-2-5 1-5 2 0 4 1 5 2' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-row">
+      <a class="brand" href="#/">
+        <span class="logo" aria-hidden="true">S</span>
+        <span class="brand-name">steinscan</span>
+      </a>
+      <form id="search" class="search" role="search">
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Search by address (st…), transaction id or block height"
+               aria-label="Search">
+        <button type="submit">Search</button>
+      </form>
+      <div class="network">
+        <label for="node-select" class="sr-only">Network</label>
+        <select id="node-select"></select>
+        <span id="live" class="live" title="Live connection to the node">
+          <span class="dot"></span><span id="live-text">connecting</span>
+        </span>
+      </div>
+    </div>
+    <div id="banner" class="banner" hidden></div>
+  </header>
+
+  <main id="app" class="wrap" aria-live="polite"></main>
+
+  <footer class="wrap foot">
+    <span>steinscan · Stein Chain devnet explorer · post-quantum (ML-DSA, FIPS 204)</span>
+    <span id="node-info"></span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

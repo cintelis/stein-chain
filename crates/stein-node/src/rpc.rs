@@ -13,6 +13,7 @@ use serde_json::json;
 use stein_crypto::{Address, Hash};
 use stein_types::{Amount, ChainId, Transaction, format_amount};
 
+use crate::views::{BlockView, TxView};
 use crate::{Node, Role, SYNC_BATCH};
 
 /// Largest request body accepted: one transaction with a key is ~5.4 KB, hex
@@ -29,6 +30,18 @@ pub fn router(node: Arc<Node>) -> Router {
         .route("/block/{height}", get(block))
         .route("/genesis", get(genesis))
         .route("/raw/blocks", get(raw_blocks))
+        .route("/blocks", get(blocks))
+        .route("/mempool", get(mempool))
+        .route("/account/{address}/txs", get(account_txs))
+        .route("/events", get(events))
+        // Explorers are served from their own origin. Reads are public; the
+        // only write, POST /tx, carries its own signature.
+        .layer(
+            tower_http::cors::CorsLayer::new()
+                .allow_origin(tower_http::cors::Any)
+                .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+                .allow_headers([axum::http::header::CONTENT_TYPE]),
+        )
         .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY))
         .with_state(node)
 }
@@ -156,11 +169,21 @@ async fn tx_status(AxumState(node): AxumState<Arc<Node>>, Path(id): Path<String>
     let Ok(id) = id.parse::<Hash>() else {
         return error(StatusCode::BAD_REQUEST, "bad transaction id");
     };
-    match node.store.read().locate(&id) {
-        Some(loc) => {
-            Json(json!({ "status": "included", "height": loc.height, "index": loc.index }))
-                .into_response()
-        }
+    let store = node.store.read();
+    if let Some(loc) = store.locate(&id) {
+        let tx = store.block(loc.height).and_then(|b| {
+            let body = b.bodies.get(loc.index as usize)?;
+            let witness = b.witnesses.as_ref().and_then(|w| w.get(loc.index as usize));
+            Some(TxView::of(body, witness, Some((loc.height, loc.index))))
+        });
+        return Json(
+            json!({ "status": "included", "height": loc.height, "index": loc.index, "tx": tx }),
+        )
+        .into_response();
+    }
+    drop(store);
+    match node.mempool.lock().get(&id) {
+        Some(tx) => Json(json!({ "status": "pending", "tx": TxView::pending(tx) })).into_response(),
         None => Json(json!({ "status": "unknown" })).into_response(),
     }
 }
@@ -228,4 +251,97 @@ async fn raw_blocks(
             .into_response(),
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
     }
+}
+
+#[derive(Deserialize)]
+struct ListQuery {
+    /// Newest height to include (default: the tip).
+    before: Option<u64>,
+    #[serde(default = "default_limit")]
+    limit: usize,
+}
+
+fn default_limit() -> usize {
+    20
+}
+
+/// Most items any list endpoint returns.
+const MAX_LIST: usize = 100;
+
+/// `GET /blocks?before=H&limit=N`: recent blocks, newest first.
+async fn blocks(
+    AxumState(node): AxumState<Arc<Node>>,
+    Query(q): Query<ListQuery>,
+) -> Json<Vec<BlockView>> {
+    let store = node.store.read();
+    let top = q.before.unwrap_or_else(|| store.tip()).min(store.tip());
+    let views = (1..=top)
+        .rev()
+        .take(q.limit.min(MAX_LIST))
+        .filter_map(|h| store.block(h).map(BlockView::of))
+        .collect();
+    Json(views)
+}
+
+/// `GET /mempool?limit=N`: transactions waiting for a block.
+async fn mempool(
+    AxumState(node): AxumState<Arc<Node>>,
+    Query(q): Query<ListQuery>,
+) -> Json<Vec<TxView>> {
+    let pool = node.mempool.lock();
+    Json(
+        pool.pending(q.limit.min(MAX_LIST))
+            .into_iter()
+            .map(TxView::pending)
+            .collect(),
+    )
+}
+
+/// `GET /account/{address}/txs?limit=N`: transactions touching an account,
+/// newest first.
+async fn account_txs(
+    AxumState(node): AxumState<Arc<Node>>,
+    Path(address): Path<String>,
+    Query(q): Query<ListQuery>,
+) -> Response {
+    let address: Address = match address.parse() {
+        Ok(a) => a,
+        Err(e) => return error(StatusCode::BAD_REQUEST, e),
+    };
+    let store = node.store.read();
+    let views: Vec<TxView> = store
+        .address_txs(&address, q.limit.min(MAX_LIST))
+        .into_iter()
+        .filter_map(|loc| {
+            let b = store.block(loc.height)?;
+            let body = b.bodies.get(loc.index as usize)?;
+            let witness = b.witnesses.as_ref().and_then(|w| w.get(loc.index as usize));
+            Some(TxView::of(body, witness, Some((loc.height, loc.index))))
+        })
+        .collect();
+    Json(views).into_response()
+}
+
+/// `GET /events`: server-sent events, one JSON `Event` per message, as blocks
+/// are produced or verified and transactions accepted.
+async fn events(
+    AxumState(node): AxumState<Arc<Node>>,
+) -> axum::response::sse::Sse<
+    impl futures_core::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+> {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use tokio_stream::StreamExt as _;
+    use tokio_stream::wrappers::BroadcastStream;
+
+    let stream = BroadcastStream::new(node.events.subscribe()).filter_map(|event| {
+        // A subscriber that fell behind skips what it missed; it can catch
+        // up through GET /blocks.
+        let event = event.ok()?;
+        let kind = match &event {
+            crate::views::Event::Block(_) => "block",
+            crate::views::Event::Pending(_) => "pending",
+        };
+        Event::default().event(kind).json_data(&event).ok().map(Ok)
+    });
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }

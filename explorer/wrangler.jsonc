@@ -1,0 +1,11 @@
+// steinscan: static explorer, served from Cloudflare's edge. It holds no
+// state and no secrets; the browser reads a Stein node's public RPC directly.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "steinscan",
+  "compatibility_date": "2026-09-30",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+  }
+}

@@ -10,8 +10,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufReader, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use stein_crypto::Hash;
-use stein_types::{Block, Height};
+use stein_crypto::{Address, Hash};
+use stein_types::{Action, Block, Height};
 
 /// Where each transaction landed.
 #[derive(Debug, Clone, Copy)]
@@ -27,6 +27,9 @@ pub struct Store {
     log: File,
     blocks: Vec<Block>,
     tx_index: HashMap<Hash, TxLocation>,
+    /// Transactions touching each address (as sender or recipient), oldest
+    /// first. For explorers; production moves this to an indexer (SPEC §11.1).
+    by_address: HashMap<Address, Vec<TxLocation>>,
     retention: u64,
 }
 
@@ -78,6 +81,7 @@ impl Store {
                 log,
                 blocks: Vec::new(),
                 tx_index: HashMap::new(),
+                by_address: HashMap::new(),
                 retention,
             },
             recovered,
@@ -96,13 +100,16 @@ impl Store {
         }
         let height = block.header.height;
         for (index, body) in block.bodies.iter().enumerate() {
-            self.tx_index.insert(
-                body.id(),
-                TxLocation {
-                    height,
-                    index: index as u32,
-                },
-            );
+            let at = TxLocation {
+                height,
+                index: index as u32,
+            };
+            self.tx_index.insert(body.id(), at);
+            let Action::Transfer { to, .. } = &body.action;
+            self.by_address.entry(body.sender).or_default().push(at);
+            if *to != body.sender {
+                self.by_address.entry(*to).or_default().push(at);
+            }
         }
         self.blocks.push(block);
         self.prune_witnesses();
@@ -145,6 +152,19 @@ impl Store {
             height = height.saturating_add(1);
         }
         out
+    }
+
+    /// Height of the newest block held.
+    pub fn tip(&self) -> Height {
+        self.blocks.last().map_or(0, |b| b.header.height)
+    }
+
+    /// Up to `limit` locations of transactions touching `address`, newest first.
+    pub fn address_txs(&self, address: &Address, limit: usize) -> Vec<TxLocation> {
+        self.by_address
+            .get(address)
+            .map(|v| v.iter().rev().take(limit).copied().collect())
+            .unwrap_or_default()
     }
 
     /// Where a transaction was included.
