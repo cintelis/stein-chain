@@ -18,6 +18,8 @@ pub struct TxView {
     pub amount: String,
     /// Amount in STEIN.
     pub amount_stein: String,
+    /// Fee in base units (string).
+    pub fee: String,
     /// Fee in STEIN.
     pub fee_stein: String,
     /// Sender nonce.
@@ -53,6 +55,7 @@ impl TxView {
             to: *to,
             amount: amount.to_string(),
             amount_stein: format_amount(*amount),
+            fee: body.fee.to_string(),
             fee_stein: format_amount(body.fee),
             nonce: body.nonce,
             expires_at: body.expires_at,
@@ -85,6 +88,8 @@ pub struct BlockView {
     pub proposer: Address,
     /// Number of transactions.
     pub tx_count: u32,
+    /// Fees paid in the block, in STEIN (to the proposer on the devnet).
+    pub fees_stein: String,
     /// State root after the block.
     pub state_root: Hash,
     /// Total encoded transaction bytes, while witnesses are retained.
@@ -110,6 +115,10 @@ impl BlockView {
             })
             .collect();
         let size = witnesses.map(|_| txs.iter().filter_map(|t| t.size).sum());
+        let fees = block
+            .bodies
+            .iter()
+            .fold(0u128, |sum, b| sum.saturating_add(b.fee));
         Self {
             height: h.height,
             hash: block.hash(),
@@ -117,6 +126,7 @@ impl BlockView {
             timestamp_ms: h.timestamp_ms,
             proposer: h.proposer,
             tx_count: h.tx_count,
+            fees_stein: format_amount(fees),
             state_root: h.state_root,
             size,
             witnesses_available: witnesses.is_some(),

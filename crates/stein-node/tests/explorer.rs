@@ -212,3 +212,33 @@ async fn lists_and_lookups_for_the_explorer() {
     let sent: Vec<TxView> = get(&format!("{url}/account/{}/txs?limit=1", alice.address())).await;
     assert_eq!(sent.len(), 1);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn totals_validators_and_top_accounts() {
+    let dir = tempfile::tempdir().expect("dir");
+    let (alice, _) = setup(dir.path());
+    let a = Node::open(dir.path()).expect("validator");
+    let url = serve(Arc::clone(&a)).await;
+    let bob = Address([7; 32]);
+    for nonce in 0..3 {
+        a.submit(pay(&alice, nonce, bob)).await.expect("submit");
+    }
+    a.produce_block().expect("produce");
+
+    let status: rpc::Status = get(&format!("{url}/status")).await;
+    assert_eq!(status.tx_total, 3);
+    assert_eq!(status.total_supply_stein, "100");
+    assert_eq!(status.accounts, 3, "alice, bob and the validator (fees)");
+
+    let blocks: Vec<BlockView> = get(&format!("{url}/blocks?limit=1")).await;
+    assert_eq!(blocks[0].fees_stein, "0.03");
+
+    let validators: serde_json::Value = get(&format!("{url}/validators")).await;
+    assert_eq!(validators["validators"].as_array().map(Vec::len), Some(1));
+    assert_eq!(validators["validators"][0]["scheme"], "ml-dsa-44");
+
+    let top: Vec<rpc::AccountView> = get(&format!("{url}/accounts/top?limit=2")).await;
+    assert_eq!(top.len(), 2);
+    assert_eq!(top[0].address, alice.address());
+    assert_eq!(top[1].balance_stein, "3");
+}

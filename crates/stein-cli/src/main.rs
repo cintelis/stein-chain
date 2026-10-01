@@ -3,6 +3,8 @@
 //! Keys are FIPS 204 seeds in files (see `stein_crypto::create_seed_file`).
 //! That is fine for a devnet; real funds belong in a hardware wallet (SPEC §9).
 
+mod loadgen;
+
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
@@ -63,6 +65,28 @@ enum Command {
     Tx {
         /// Transaction id.
         id: Hash,
+    },
+    /// Devnet traffic: fund throwaway accounts, then send random transfers
+    /// between them at a steady rate.
+    Loadgen {
+        /// Key that funds the accounts, e.g. the devnet faucet.
+        #[arg(long)]
+        key: PathBuf,
+        /// Number of accounts (one in three uses ML-DSA-65).
+        #[arg(long, default_value_t = 20)]
+        accounts: usize,
+        /// Transfers per second.
+        #[arg(long, default_value_t = 2.0)]
+        tps: f64,
+        /// Stop after this many seconds (0 = until Ctrl-C).
+        #[arg(long, default_value_t = 0)]
+        duration: u64,
+        /// STEIN given to each account.
+        #[arg(long, default_value = "1000")]
+        fund: String,
+        /// Largest single transfer, in STEIN.
+        #[arg(long, default_value = "25")]
+        max_amount: String,
     },
 }
 
@@ -162,6 +186,24 @@ async fn main() -> Result<()> {
                 }
                 return Err("not included after 15 s".into());
             }
+        }
+        Command::Loadgen {
+            key,
+            accounts,
+            tps,
+            duration,
+            fund,
+            max_amount,
+        } => {
+            let opts = loadgen::Options {
+                funder: key,
+                accounts,
+                tps,
+                duration_secs: duration,
+                fund: parse_amount(&fund)?,
+                max_amount: parse_amount(&max_amount)?,
+            };
+            loadgen::run(rpc, client()?, opts).await?;
         }
         Command::Tx { id } => {
             let s: serde_json::Value = get(rpc, &format!("/tx/{id}")).await?;

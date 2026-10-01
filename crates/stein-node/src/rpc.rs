@@ -34,6 +34,8 @@ pub fn router(node: Arc<Node>) -> Router {
         .route("/mempool", get(mempool))
         .route("/account/{address}/txs", get(account_txs))
         .route("/events", get(events))
+        .route("/validators", get(validators))
+        .route("/accounts/top", get(top_accounts))
         // Explorers are served from their own origin. Reads are public; the
         // only write, POST /tx, carries its own signature.
         .layer(
@@ -81,6 +83,18 @@ pub struct Status {
     /// Signature schemes accounts may use on this network.
     #[serde(default)]
     pub tx_schemes: Vec<stein_crypto::Scheme>,
+    /// Transactions in all blocks this node holds.
+    #[serde(default)]
+    pub tx_total: u64,
+    /// Accounts that exist.
+    #[serde(default)]
+    pub accounts: usize,
+    /// Total supply in STEIN (fixed at genesis on the devnet).
+    #[serde(default)]
+    pub total_supply_stein: String,
+    /// Target time between blocks.
+    #[serde(default)]
+    pub block_time_ms: u64,
 }
 
 async fn status(AxumState(node): AxumState<Arc<Node>>) -> Json<Status> {
@@ -104,6 +118,10 @@ async fn status(AxumState(node): AxumState<Arc<Node>>) -> Json<Status> {
         },
         sync_error: node.sync_error.lock().clone(),
         tx_schemes: state.params().tx_schemes.clone(),
+        tx_total: node.store.read().tx_total(),
+        accounts: state.account_count(),
+        total_supply_stein: format_amount(node.genesis.total_supply().unwrap_or(0)),
+        block_time_ms: state.params().block_time_ms,
     })
 }
 
@@ -344,4 +362,48 @@ async fn events(
         Event::default().event(kind).json_data(&event).ok().map(Ok)
     });
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+/// `GET /validators`: the active validator set.
+async fn validators(AxumState(node): AxumState<Arc<Node>>) -> Json<serde_json::Value> {
+    let state = node.state.read();
+    let total: u64 = state
+        .validators()
+        .iter()
+        .map(|v| v.power)
+        .fold(0u64, u64::saturating_add);
+    let list: Vec<serde_json::Value> = state
+        .validators()
+        .iter()
+        .map(|v| {
+            json!({
+                "address": v.key.address(),
+                "scheme": v.key.scheme(),
+                "power": v.power,
+                "share": if total == 0 { 0.0 } else { v.power as f64 / total as f64 },
+            })
+        })
+        .collect();
+    Json(json!({ "validators": list, "total_power": total }))
+}
+
+/// `GET /accounts/top?limit=N`: accounts by balance, largest first.
+async fn top_accounts(
+    AxumState(node): AxumState<Arc<Node>>,
+    Query(q): Query<ListQuery>,
+) -> Json<Vec<AccountView>> {
+    let state = node.state.read();
+    Json(
+        state
+            .richest(q.limit.min(MAX_LIST))
+            .into_iter()
+            .map(|(address, a)| AccountView {
+                address,
+                balance: a.balance.to_string(),
+                balance_stein: format_amount(a.balance),
+                nonce: a.nonce,
+                key_registered: a.public_key.is_some(),
+            })
+            .collect(),
+    )
 }

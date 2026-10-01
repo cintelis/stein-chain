@@ -3,42 +3,80 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>steinscan</title>
-  <meta name="description" content="Stein Chain block explorer: live blocks and transactions on the post-quantum STEIN network.">
+  <title>steinscan · Stein Chain explorer</title>
+  <meta name="description" content="steinscan: the block explorer for Stein Chain. Live blocks, transactions, accounts and validators on the post-quantum STEIN network.">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src *; base-uri 'none'; form-action 'none'">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%233b5bdb'/%3E%3Cpath d='M9 21c2 2 5 3 8 2 3-1 4-4 1-5l-4-1c-3-1-2-5 1-5 2 0 4 1 5 2' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%231366d6'/%3E%3Cpath d='M10.5 20.5c1.8 1.8 4.4 2.5 7 1.8 2.5-.7 3.2-3.5.6-4.4l-4.2-1.4c-2.6-.9-2-4.4.6-4.6 1.8-.1 3.4.6 4.6 1.6' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="top">
-    <div class="wrap top-row">
-      <a class="brand" href="#/">
-        <span class="logo" aria-hidden="true">S</span>
-        <span class="brand-name">steinscan</span>
-      </a>
-      <form id="search" class="search" role="search">
-        <input id="search-input" type="search" autocomplete="off" spellcheck="false"
-               placeholder="Search by address (st…), transaction id or block height"
-               aria-label="Search">
-        <button type="submit">Search</button>
-      </form>
-      <div class="network">
+  <div class="strip">
+    <div class="wrap strip-row">
+      <span id="strip-info" class="strip-info">STEIN devnet</span>
+      <span class="strip-right">
         <label for="node-select" class="sr-only">Network</label>
         <select id="node-select"></select>
-        <span id="live" class="live" title="Live connection to the node">
-          <span class="dot"></span><span id="live-text">connecting</span>
-        </span>
-      </div>
+        <span id="live" class="live" title="Live connection to the node"><span class="dot"></span><span id="live-text">connecting</span></span>
+      </span>
     </div>
-    <div id="banner" class="banner" hidden></div>
+  </div>
+
+  <header class="nav">
+    <div class="wrap nav-row">
+      <a class="brand" href="#/">
+        <span class="logo" aria-hidden="true"></span>
+        <span class="brand-name">stein<b>scan</b></span>
+      </a>
+      <form id="nav-search" class="nav-search" role="search" hidden>
+        <input id="nav-search-input" type="search" autocomplete="off" spellcheck="false" aria-label="Search"
+               placeholder="Search by Address / Txn Hash / Block">
+        <button type="submit" aria-label="Search">⌕</button>
+      </form>
+      <nav class="menu" aria-label="Main">
+        <a href="#/">Home</a>
+        <div class="dropdown">
+          <button type="button" class="drop-btn">Blockchain ▾</button>
+          <div class="drop-menu">
+            <a href="#/txs">Transactions</a>
+            <a href="#/pending">Pending Transactions</a>
+            <hr>
+            <a href="#/blocks">View Blocks</a>
+            <hr>
+            <a href="#/accounts">Top Accounts</a>
+          </div>
+        </div>
+        <a href="#/validators">Validators</a>
+      </nav>
+    </div>
   </header>
 
-  <main id="app" class="wrap" aria-live="polite"></main>
+  <div id="banner" class="banner" hidden></div>
+  <main id="app" aria-live="polite"></main>
 
-  <footer class="wrap foot">
-    <span>steinscan · Stein Chain devnet explorer · post-quantum (ML-DSA, FIPS 204)</span>
-    <span id="node-info"></span>
+  <footer class="foot">
+    <div class="wrap foot-grid">
+      <div>
+        <div class="foot-brand"><span class="logo" aria-hidden="true"></span> Powered by Stein Chain</div>
+        <p>steinscan is the block explorer for Stein Chain, a post-quantum layer-1. Every signature on chain is
+          ML-DSA (FIPS 204); every block is re-verified by every node.</p>
+      </div>
+      <div>
+        <h3>Explorer</h3>
+        <a href="#/blocks">Blocks</a>
+        <a href="#/txs">Transactions</a>
+        <a href="#/pending">Pending Transactions</a>
+        <a href="#/accounts">Top Accounts</a>
+        <a href="#/validators">Validators</a>
+      </div>
+      <div>
+        <h3>Network</h3>
+        <span id="foot-node" class="foot-mono"></span>
+        <span id="foot-chain"></span>
+        <a href="https://steinchain.com" rel="noopener">steinchain.com</a>
+      </div>
+    </div>
+    <div class="wrap foot-bottom">steinscan © 2026 · Stein Chain devnet · not a production network</div>
   </footer>
 
   <script src="app.js"></script>

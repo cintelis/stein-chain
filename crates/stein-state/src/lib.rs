@@ -200,6 +200,21 @@ impl State {
         self.accounts.get(address)
     }
 
+    /// The `limit` accounts with the largest balances, largest first. O(n):
+    /// fine for a devnet; an indexer serves this at scale (SPEC §11.1).
+    pub fn richest(&self, limit: usize) -> Vec<(Address, &Account)> {
+        let mut all: Vec<(Address, &Account)> =
+            self.accounts.iter().map(|(a, acc)| (*a, acc)).collect();
+        all.sort_by(|x, y| y.1.balance.cmp(&x.1.balance).then(x.0.cmp(&y.0)));
+        all.truncate(limit);
+        all
+    }
+
+    /// Number of accounts that exist.
+    pub fn account_count(&self) -> usize {
+        self.accounts.len()
+    }
+
     /// The active validator set, ordered by address.
     pub fn validators(&self) -> &[Validator] {
         &self.validators

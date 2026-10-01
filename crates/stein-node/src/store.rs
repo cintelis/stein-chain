@@ -31,6 +31,8 @@ pub struct Store {
     /// first. For explorers; production moves this to an indexer (SPEC §11.1).
     by_address: HashMap<Address, Vec<TxLocation>>,
     retention: u64,
+    /// Transactions in all blocks held.
+    tx_total: u64,
 }
 
 /// Most bytes one log record may claim: a corrupted length must not make the
@@ -82,6 +84,7 @@ impl Store {
                 blocks: Vec::new(),
                 tx_index: HashMap::new(),
                 by_address: HashMap::new(),
+                tx_total: 0,
                 retention,
             },
             recovered,
@@ -105,6 +108,7 @@ impl Store {
                 index: index as u32,
             };
             self.tx_index.insert(body.id(), at);
+            self.tx_total = self.tx_total.saturating_add(1);
             let Action::Transfer { to, .. } = &body.action;
             self.by_address.entry(body.sender).or_default().push(at);
             if *to != body.sender {
@@ -152,6 +156,11 @@ impl Store {
             height = height.saturating_add(1);
         }
         out
+    }
+
+    /// Transactions in all blocks held.
+    pub fn tx_total(&self) -> u64 {
+        self.tx_total
     }
 
     /// Height of the newest block held.
