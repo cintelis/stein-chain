@@ -104,6 +104,29 @@ fn check_permissions(_: &Path) -> Result<(), SeedFileError> {
 mod tests {
     use super::*;
 
+    /// Writes `text` readable by its owner only, as a real seed file must be.
+    fn write_private(path: &Path, text: &str) {
+        std::fs::write(path, text).expect("write");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).expect("chmod");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_seed_file_readable_by_others_is_refused() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("open.seed");
+        std::fs::write(&path, format!("ml-dsa-44:{}", "07".repeat(32))).expect("write");
+        // std::fs::write leaves the umask default, typically 0644.
+        assert!(matches!(
+            secret_key_from_seed_file(&path),
+            Err(SeedFileError::TooPermissive(_))
+        ));
+    }
+
     #[test]
     fn a_seed_file_holds_its_key_and_is_never_overwritten() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -126,7 +149,7 @@ mod tests {
     fn a_bare_hex_seed_is_read_as_ml_dsa_65() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("old.seed");
-        std::fs::write(&path, "07".repeat(32)).expect("write");
+        write_private(&path, &"07".repeat(32));
         let key = secret_key_from_seed_file(&path).expect("load");
         assert_eq!(key.scheme(), Scheme::MlDsa65);
         assert_eq!(
@@ -141,7 +164,7 @@ mod tests {
     fn a_malformed_seed_file_is_refused() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("bad.seed");
-        std::fs::write(&path, "ml-dsa-44:not hex").expect("write");
+        write_private(&path, "ml-dsa-44:not hex");
         assert!(matches!(
             secret_key_from_seed_file(&path),
             Err(SeedFileError::Malformed)

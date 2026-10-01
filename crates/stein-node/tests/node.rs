@@ -50,21 +50,25 @@ fn pay(alice: &SecretKey, nonce: u64) -> Transaction {
     Transaction::sign(body, alice, nonce == 0).expect("sign")
 }
 
-#[test]
-fn transactions_survive_a_restart_and_the_log_is_reverified() {
+#[tokio::test(flavor = "multi_thread")]
+async fn transactions_survive_a_restart_and_the_log_is_reverified() {
     let dir = tempfile::tempdir().expect("tempdir");
     let alice = setup(dir.path());
 
     let node = Node::open(dir.path()).expect("open");
     // Nonce 1 cannot be verified before the key-registering nonce 0 is known…
-    assert!(node.submit(pay(&alice, 1)).is_err());
+    assert!(node.submit(pay(&alice, 1)).await.is_err());
     // …but can be once nonce 0 is queued, before any block includes it.
-    node.submit(pay(&alice, 0)).expect("submit");
+    node.submit(pay(&alice, 0)).await.expect("submit");
     node.submit(pay(&alice, 1))
+        .await
         .expect("follow-up verified against the queued key");
-    assert!(node.submit(pay(&alice, 0)).is_err(), "nonce already queued");
+    assert!(
+        node.submit(pay(&alice, 0)).await.is_err(),
+        "nonce already queued"
+    );
     assert_eq!(node.produce_block().expect("produce"), Some(1));
-    node.submit(pay(&alice, 2)).expect("submit");
+    node.submit(pay(&alice, 2)).await.expect("submit");
     assert_eq!(node.produce_block().expect("produce"), Some(2));
     assert_eq!(
         node.produce_block().expect("produce"),
@@ -89,17 +93,17 @@ fn transactions_survive_a_restart_and_the_log_is_reverified() {
         3
     );
     assert!(
-        reopened.submit(pay(&alice, 1)).is_err(),
+        reopened.submit(pay(&alice, 1)).await.is_err(),
         "replay after restart"
     );
 }
 
-#[test]
-fn a_tampered_block_log_is_refused() {
+#[tokio::test(flavor = "multi_thread")]
+async fn a_tampered_block_log_is_refused() {
     let dir = tempfile::tempdir().expect("tempdir");
     let alice = setup(dir.path());
     let node = Node::open(dir.path()).expect("open");
-    node.submit(pay(&alice, 0)).expect("submit");
+    node.submit(pay(&alice, 0)).await.expect("submit");
     node.produce_block().expect("produce");
     drop(node);
 

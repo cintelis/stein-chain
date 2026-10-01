@@ -68,8 +68,16 @@ enum Command {
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+/// HTTP client under Stein's TLS policy: TLS 1.3, post-quantum key exchange.
+fn client() -> Result<reqwest::Client> {
+    Ok(reqwest::Client::builder()
+        .use_preconfigured_tls(stein_tls::client_config()?)
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?)
+}
+
 async fn get<T: serde::de::DeserializeOwned>(rpc: &str, path: &str) -> Result<T> {
-    let response = reqwest::get(format!("{rpc}{path}")).await?;
+    let response = client()?.get(format!("{rpc}{path}")).send().await?;
     if !response.status().is_success() {
         return Err(response.text().await?.into());
     }
@@ -127,7 +135,7 @@ async fn main() -> Result<()> {
             let tx = Transaction::sign(body, &key, register)?;
 
             let raw = hex::encode(borsh::to_vec(&tx)?);
-            let response = reqwest::Client::new()
+            let response = client()?
                 .post(format!("{rpc}/tx"))
                 .json(&SubmitRequest { raw })
                 .send()

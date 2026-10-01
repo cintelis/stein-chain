@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 stein-crypto = { workspace = true }
 stein-types = { workspace = true }
+stein-tls = { workspace = true }
 stein-node = { path = "../stein-node" }
 borsh = { workspace = true }
 clap = { workspace = true }

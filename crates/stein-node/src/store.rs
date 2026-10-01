@@ -126,6 +126,27 @@ impl Store {
         self.blocks.get(height.checked_sub(1)? as usize)
     }
 
+    /// Up to `max` consecutive blocks from `from`, capped at about `max_bytes`
+    /// of encoding (always at least one block if `from` exists).
+    pub fn range(&self, from: Height, max: u64, max_bytes: usize) -> Vec<&Block> {
+        let mut out = Vec::new();
+        let mut bytes = 0usize;
+        let mut height = from;
+        while (out.len() as u64) < max {
+            let Some(block) = self.block(height) else {
+                break;
+            };
+            let size = borsh::object_length(block).unwrap_or(usize::MAX);
+            if !out.is_empty() && bytes.saturating_add(size) > max_bytes {
+                break;
+            }
+            bytes = bytes.saturating_add(size);
+            out.push(block);
+            height = height.saturating_add(1);
+        }
+        out
+    }
+
     /// Where a transaction was included.
     pub fn locate(&self, id: &Hash) -> Option<TxLocation> {
         self.tx_index.get(id).copied()

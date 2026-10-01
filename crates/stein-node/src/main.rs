@@ -2,18 +2,19 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
-use stein_crypto::{Scheme, create_seed_file};
-use stein_node::{Node, default_data_dir, files, rpc};
+use stein_crypto::{Hash, Scheme, create_seed_file};
+use stein_node::{Node, Role, default_data_dir, files, rpc};
 use stein_types::{Allocation, ChainParams, Genesis, GenesisValidator, ONE_STEIN};
 
 #[derive(Parser)]
 #[command(name = "stein-node", version, about = "Stein Chain devnet node")]
 struct Cli {
     /// Data directory.
-    #[arg(long, global = true, default_value_os_t = default_data_dir())]
+    #[arg(long, global = true, env = "STEIN_DATA_DIR", default_value_os_t = default_data_dir())]
     data_dir: PathBuf,
     #[command(subcommand)]
     command: Command,
@@ -33,10 +34,25 @@ enum Command {
         #[arg(long, default_value_t = Scheme::MlDsa44)]
         scheme: Scheme,
     },
-    /// Run the node.
+    /// Run the node as the validator.
     Run {
-        /// RPC listen address. Keep it on localhost: the RPC has no auth yet.
-        #[arg(long, default_value = "127.0.0.1:8645")]
+        /// RPC listen address. Keep it on localhost unless it sits behind a
+        /// proxy or tunnel: the RPC has no auth or rate limiting yet.
+        #[arg(long, env = "STEIN_RPC", default_value = "127.0.0.1:8645")]
+        rpc: SocketAddr,
+    },
+    /// Run the node as a follower of a validator: forward transactions to it,
+    /// and download and fully re-verify its blocks.
+    Follow {
+        /// The validator's RPC base URL, e.g. https://xyz.trycloudflare.com.
+        #[arg(long, env = "STEIN_LEADER")]
+        leader: String,
+        /// The genesis hash this node will accept. Get it from the validator
+        /// operator out of band; never from the leader itself.
+        #[arg(long, env = "STEIN_GENESIS_HASH")]
+        genesis_hash: Hash,
+        /// RPC listen address.
+        #[arg(long, env = "STEIN_RPC", default_value = "127.0.0.1:8646")]
         rpc: SocketAddr,
     },
 }
@@ -57,7 +73,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             faucet_stein,
             scheme,
         } => init(&cli.data_dir, chain_id, faucet_stein, scheme),
-        Command::Run { rpc } => run(&cli.data_dir, rpc).await,
+        Command::Run { rpc } => serve(Node::open(&cli.data_dir)?, rpc).await,
+        Command::Follow {
+            leader,
+            genesis_hash,
+            rpc,
+        } => {
+            serve(
+                Node::open_follower(&cli.data_dir, &leader, genesis_hash).await?,
+                rpc,
+            )
+            .await
+        }
     }
 }
 
@@ -108,9 +135,14 @@ fn init(
     Ok(())
 }
 
-async fn run(dir: &std::path::Path, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
-    let node = Node::open(dir)?;
-    tokio::spawn(std::sync::Arc::clone(&node).run_producer());
+async fn serve(node: Arc<Node>, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
+    match &node.role {
+        Role::Validator(_) => tokio::spawn(Arc::clone(&node).run_producer()),
+        Role::Follower(leader) => {
+            tracing::info!(leader = %leader.url, "following");
+            tokio::spawn(Arc::clone(&node).run_follower())
+        }
+    };
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, genesis = %node.genesis_hash, "RPC listening");
     axum::serve(listener, rpc::router(node))

@@ -13,6 +13,7 @@ license = "UNLICENSED"
 stein-crypto = { path = "crates/stein-crypto" }
 stein-types = { path = "crates/stein-types" }
 stein-state = { path = "crates/stein-state" }
+stein-tls = { path = "crates/stein-tls" }
 
 # Cryptography. AWS-LC is the only implementation of ML-DSA in the workspace:
 # FIPS 204 final, on the FIPS 140-3 validation track, assembly-optimised, and the
@@ -31,8 +32,13 @@ parking_lot = "0.12"
 
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync", "fs"] }
 axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "json", "query"] }
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
-clap = { version = "4.6", features = ["derive"] }
+# TLS. Built WITHOUT `tls12` and `ring`: TLS 1.2 is absent from the binary and
+# AWS-LC is the only provider. Which suites and groups are enabled is decided in
+# stein-tls alone. reqwest gets its rustls configuration from there.
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
+webpki-roots = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-manual-roots-no-provider"] }
+clap = { version = "4.6", features = ["derive", "env"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3"

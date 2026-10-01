@@ -13,7 +13,7 @@ use serde_json::json;
 use stein_crypto::{Address, Hash};
 use stein_types::{Amount, ChainId, Transaction, format_amount};
 
-use crate::Node;
+use crate::{Node, Role, SYNC_BATCH};
 
 /// Largest request body accepted: one transaction with a key is ~5.4 KB, hex
 /// doubles it.
@@ -27,6 +27,8 @@ pub fn router(node: Arc<Node>) -> Router {
         .route("/tx", post(submit))
         .route("/tx/{id}", get(tx_status))
         .route("/block/{height}", get(block))
+        .route("/genesis", get(genesis))
+        .route("/raw/blocks", get(raw_blocks))
         .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY))
         .with_state(node)
 }
@@ -54,6 +56,15 @@ pub struct Status {
     pub min_fee_per_byte: Amount,
     /// Expiry rule.
     pub max_tx_ttl_blocks: u64,
+    /// `validator` or `follower`.
+    #[serde(default)]
+    pub role: String,
+    /// The validator a follower follows.
+    #[serde(default)]
+    pub leader: Option<String>,
+    /// Why a follower stopped following, if it did.
+    #[serde(default)]
+    pub sync_error: Option<String>,
 }
 
 async fn status(AxumState(node): AxumState<Arc<Node>>) -> Json<Status> {
@@ -67,6 +78,15 @@ async fn status(AxumState(node): AxumState<Arc<Node>>) -> Json<Status> {
         mempool: node.mempool.lock().len(),
         min_fee_per_byte: state.params().min_fee_per_byte,
         max_tx_ttl_blocks: state.params().max_tx_ttl_blocks,
+        role: match node.role {
+            Role::Validator(_) => "validator".into(),
+            Role::Follower(_) => "follower".into(),
+        },
+        leader: match &node.role {
+            Role::Follower(l) => Some(l.url.clone()),
+            Role::Validator(_) => None,
+        },
+        sync_error: node.sync_error.lock().clone(),
     })
 }
 
@@ -122,11 +142,9 @@ async fn submit(AxumState(node): AxumState<Arc<Node>>, Json(req): Json<SubmitReq
             );
         }
     };
-    // Signature verification costs ~150 µs: keep it off the async runtime.
-    match tokio::task::spawn_blocking(move || node.submit(tx)).await {
-        Ok(Ok(id)) => Json(json!({ "id": id })).into_response(),
-        Ok(Err(why)) => error(StatusCode::UNPROCESSABLE_ENTITY, why),
-        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
+    match node.submit(tx).await {
+        Ok(id) => Json(json!({ "id": id })).into_response(),
+        Err(why) => error(StatusCode::UNPROCESSABLE_ENTITY, why),
     }
 }
 
@@ -168,4 +186,42 @@ async fn block(
         body["witnesses"] = json!(block.witnesses);
     }
     Json(body).into_response()
+}
+
+async fn genesis(AxumState(node): AxumState<Arc<Node>>) -> Json<stein_types::Genesis> {
+    Json(node.genesis.clone())
+}
+
+#[derive(Deserialize)]
+struct RangeQuery {
+    from: u64,
+    #[serde(default = "default_max")]
+    max: u64,
+}
+
+fn default_max() -> u64 {
+    SYNC_BATCH
+}
+
+/// Most bytes of blocks served per request.
+const MAX_RANGE_BYTES: usize = 32 * 1024 * 1024;
+
+/// `GET /raw/blocks?from=H&max=N`: Borsh `Vec<Block>`, witnesses included
+/// while retained. What followers sync from.
+async fn raw_blocks(
+    AxumState(node): AxumState<Arc<Node>>,
+    Query(q): Query<RangeQuery>,
+) -> Response {
+    let encoded = {
+        let store = node.store.read();
+        borsh::to_vec(&store.range(q.from, q.max.min(SYNC_BATCH), MAX_RANGE_BYTES))
+    };
+    match encoded {
+        Ok(bytes) => (
+            [(axum::http::header::CONTENT_TYPE, "application/octet-stream")],
+            bytes,
+        )
+            .into_response(),
+        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
+    }
 }
