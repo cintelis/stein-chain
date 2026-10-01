@@ -1,0 +1,52 @@
+name: Deploy Cloudflare follower
+
+# By hand only (Actions → Deploy Cloudflare follower → Run workflow). The
+# validator's URL is a quick tunnel that changes when the tunnel restarts, so
+# the operator supplies it, together with the genesis hash to pin. Automatic
+# deploys come with a stable validator address (named tunnel or server).
+on:
+  workflow_dispatch:
+    inputs:
+      leader_url:
+        description: Validator RPC URL (https://…), e.g. the tunnel address
+        required: true
+        type: string
+      genesis_hash:
+        description: Genesis hash the follower must pin (from the validator operator, 64 hex)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-follower
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build image and deploy follower
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      # Inputs reach the script as environment variables, never spliced into
+      # the shell command, so they cannot inject commands.
+      LEADER_URL: ${{ inputs.leader_url }}
+      STEIN_GENESIS_HASH: ${{ inputs.genesis_hash }}
+      FOLLOWER: https://stein-follower.nick-598.workers.dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: npm ci --no-audit --no-fund
+        working-directory: deploy/cloudflare
+      # wrangler builds deploy/docker/Dockerfile (from source, pinned
+      # compiler) with the runner's Docker and pushes it to Cloudflare.
+      - run: bash deploy/cloudflare/deploy.sh "$LEADER_URL"
+      - name: Report
+        run: |
+          echo "Deployed. Cloudflare rolls a new image out to the running instance over"
+          echo "several minutes; until then $FOLLOWER may still serve the previous one."
+          curl -fsS "$FOLLOWER/status" || true

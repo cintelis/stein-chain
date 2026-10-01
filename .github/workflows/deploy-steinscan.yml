@@ -1,0 +1,52 @@
+name: Deploy steinscan
+
+# The explorer is three static files: deploy whenever they change on main,
+# or by hand (Actions → Deploy steinscan → Run workflow).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "explorer/**"
+      - ".github/workflows/deploy-steinscan.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two deploys at once; a newer push waits for the running one.
+concurrency:
+  group: deploy-steinscan
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      SITE: https://steinscan.nick-598.workers.dev
+    defaults:
+      run:
+        working-directory: explorer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: node --check public/app.js
+      # wrangler is pinned in package-lock.json; no third-party deploy action.
+      - run: npm ci --no-audit --no-fund
+      - run: npx wrangler deploy
+      # What is served must be what was committed, with the security headers.
+      - name: Verify the deployment
+        run: |
+          for _ in $(seq 30); do
+            curl -fsS "$SITE/app.js" | cmp -s - public/app.js && break
+            sleep 2
+          done
+          curl -fsS "$SITE/app.js" | cmp - public/app.js
+          headers=$(curl -fsSI "$SITE/")
+          grep -qi "^content-security-policy: default-src 'self'" <<<"$headers"
+          grep -qi "^x-content-type-options: nosniff" <<<"$headers"
+          echo "steinscan deployed and verified: $SITE"
