@@ -64,6 +64,17 @@ cargo run --release -p stein-crypto --example sigbench     # ML-DSA-44/65 sign/v
 cargo run --release -p stein-state  --example throughput   # state-machine TPS, cold vs warm cache
 ```
 
+CI (`.github/workflows/ci.yml`, adapted from Sigilant) runs on every push and
+pull request:
+- text-file, toolchain-pin and **crypto-policy** checks (`scripts/`): no
+  classical or second ML-DSA implementation in the build graph;
+- `fmt`, `clippy -D warnings` and all tests;
+- an end-to-end devnet smoke test (`scripts/smoke-devnet.sh`) on Linux,
+  Windows and macOS;
+- RustSec advisories.
+
+Benchmarks run on demand.
+
 Key security tests (in `crates/stein-state/src/tests.rs`):
 - `followers_reject_a_block_with_a_forged_transaction`: a malicious leader
   signs a block containing a forged transfer, and every follower rejects it.
