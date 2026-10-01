@@ -1,8 +1,8 @@
 # Stein Chain — Smart Contracts (WASM)
 
-*Design, version 0.1 (draft), 2 October 2026. Companion to [SPEC.md](SPEC.md)
-and [SHARD-READY.md](SHARD-READY.md). Status: proposed; nothing here is built
-yet.*
+*Design, version 0.2, 2 October 2026. Companion to [SPEC.md](SPEC.md)
+and [SHARD-READY.md](SHARD-READY.md). Status: **accepted** (decisions in §15);
+nothing here is built yet.*
 
 **Decision:** smart contracts run as **WebAssembly**, in a deterministic,
 fuel-metered sandbox, and are written primarily in **Rust** against a Stein
@@ -395,14 +395,15 @@ disk.
 
 ---
 
-## 15. Decisions for the project owner
+## 15. Decisions (accepted 2 October 2026)
 
-1. **Async-only composability** (§6.4): recommended; it rules out flash-loan
-   style DeFi.
-2. **Storage deposit instead of rent** (§3.3): recommended; the initial price
-   per byte to be set from the disk budget.
-3. **Upgradeability**: immutable by default with an opt-in authority
-   (recommended), or immutable only.
-4. **Code size limit**: 512 KiB proposed.
-5. **First standard contracts to ship**: STN-1 tokens and STN-3 PQ multisig
-   proposed.
+| # | Decision | Accepted |
+|---|---|---|
+| 1 | Composability | **Asynchronous only** (§6.4). Flash-loan-style DeFi is out of scope by design. |
+| 2 | State growth | **Storage deposit**, refundable, no rent (§3.3). The initial price per byte is set from the disk budget when C1 is benchmarked. |
+| 3 | Upgradeability | **Immutable by default, with an opt-in upgrade authority**, visible on steinscan and renounceable (§7.5). |
+| 4 | Code size | **512 KiB** maximum per contract (§4). |
+| 5 | First standards | **STN-1 fungible token** and **STN-3 post-quantum multisig** ship in C2; STN-2 NFTs follow in C3 (§10). |
+
+Still open, set during C1 from benchmarks: `deposit_per_byte`, `gas_price`,
+the block gas limit, and the calibration factor between fuel and gas (§5).
