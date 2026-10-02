@@ -229,7 +229,7 @@ async fn totals_validators_and_top_accounts() {
     let status: rpc::Status = get(&format!("{url}/status")).await;
     assert_eq!(status.tx_total, 3);
     assert_eq!(status.total_supply_stein, "100");
-    assert_eq!(status.accounts, 3, "alice, bob and the validator (fees)");
+    assert_eq!(status.accounts, 3, "alice, bob and the fee pool");
 
     let blocks: Vec<BlockView> = get(&format!("{url}/blocks?limit=1")).await;
     assert_eq!(blocks[0].fees_stein, "0.03");
@@ -237,6 +237,16 @@ async fn totals_validators_and_top_accounts() {
     let validators: serde_json::Value = get(&format!("{url}/validators")).await;
     assert_eq!(validators["validators"].as_array().map(Vec::len), Some(1));
     assert_eq!(validators["validators"][0]["scheme"], "ml-dsa-44");
+    assert_eq!(validators["validators"][0]["blocks_proposed"], 1);
+
+    let proposer = blocks[0].proposer;
+    let detail: serde_json::Value = get(&format!("{url}/validator/{proposer}")).await;
+    assert_eq!(detail["validator"]["power"], 1);
+    assert_eq!(detail["blocks_proposed"], 1);
+    assert_eq!(detail["blocks"][0]["height"], 1);
+    let not_one: serde_json::Value = get(&format!("{url}/validator/{}", alice.address())).await;
+    assert!(not_one["validator"].is_null());
+    assert_eq!(not_one["blocks_proposed"], 0);
 
     let top: Vec<rpc::AccountView> = get(&format!("{url}/accounts/top?limit=2")).await;
     assert_eq!(top.len(), 2);

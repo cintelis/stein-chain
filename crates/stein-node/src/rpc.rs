@@ -35,6 +35,7 @@ pub fn router(node: Arc<Node>) -> Router {
         .route("/account/{address}/txs", get(account_txs))
         .route("/events", get(events))
         .route("/validators", get(validators))
+        .route("/validator/{address}", get(validator))
         .route("/accounts/top", get(top_accounts))
         // Explorers are served from their own origin. Reads are public; the
         // only write, POST /tx, carries its own signature.
@@ -388,11 +389,13 @@ async fn validators(AxumState(node): AxumState<Arc<Node>>) -> Json<serde_json::V
         .validators()
         .iter()
         .map(|v| {
+            let (blocks_proposed, _) = node.store.read().proposed(&v.key.address(), 0);
             json!({
                 "address": v.key.address(),
                 "scheme": v.key.scheme(),
                 "power": v.power,
                 "share": if total == 0 { 0.0 } else { v.power as f64 / total as f64 },
+                "blocks_proposed": blocks_proposed,
             })
         })
         .collect();
@@ -418,4 +421,44 @@ async fn top_accounts(
             })
             .collect(),
     )
+}
+
+/// `GET /validator/{address}?limit=N`: whether `address` is an active
+/// validator, its consensus key and power, and the blocks it proposed
+/// (newest first). `validator` is null for any other address.
+async fn validator(
+    AxumState(node): AxumState<Arc<Node>>,
+    Path(address): Path<String>,
+    Query(q): Query<ListQuery>,
+) -> Response {
+    let address: Address = match address.parse() {
+        Ok(a) => a,
+        Err(e) => return error(StatusCode::BAD_REQUEST, e),
+    };
+    let state = node.state.read();
+    let total: u64 = state
+        .validators()
+        .iter()
+        .map(|v| v.power)
+        .fold(0u64, u64::saturating_add);
+    let entry = state
+        .validators()
+        .iter()
+        .find(|v| v.key.address() == address)
+        .map(|v| {
+            json!({
+                "scheme": v.key.scheme(),
+                "power": v.power,
+                "share": if total == 0 { 0.0 } else { v.power as f64 / total as f64 },
+                "epoch_blocks": state.params().epoch_blocks,
+            })
+        });
+    drop(state);
+    let store = node.store.read();
+    let (count, heights) = store.proposed(&address, q.limit.min(MAX_LIST));
+    let blocks: Vec<BlockView> = heights
+        .into_iter()
+        .filter_map(|h| store.block(h).map(BlockView::of))
+        .collect();
+    Json(json!({ "validator": entry, "blocks_proposed": count, "blocks": blocks })).into_response()
 }

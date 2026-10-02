@@ -510,8 +510,9 @@ async function renderValidatorsPage() {
     h("h1", { class: "page-title" }, "Validators"),
     h("section", { class: "card" },
       h("div", { class: "card-head" }, h("span", { class: "muted small" }, `${v.validators.length} active · total voting power ${num(v.total_power)}`)),
-      table(["Validator", "Signature scheme", "Voting power", "Share"], v.validators.map((x) => [
-        linkAddr(x.address, true), schemePill(x.scheme), num(x.power), `${(x.share * 100).toFixed(2)}%`]))),
+      table(["Validator", "Signature scheme", "Voting power", "Share", "Blocks proposed"], v.validators.map((x) => [
+        linkAddr(x.address, true), schemePill(x.scheme), num(x.power), `${(x.share * 100).toFixed(2)}%`,
+        x.blocks_proposed === undefined ? "—" : num(x.blocks_proposed)]))),
   ];
 }
 
@@ -592,7 +593,12 @@ async function renderBlockPage(arg) {
 
 async function renderAddressPage(address) {
   if (!/^st[0-9a-f]{72}$/.test(address)) throw new Error("not a Stein address");
-  const [account, txs] = await Promise.all([api(`/account/${address}`), api(`/account/${address}/txs?limit=100`)]);
+  const [account, txs, role] = await Promise.all([
+    api(`/account/${address}`),
+    api(`/account/${address}/txs?limit=100`),
+    // Older nodes have no /validator endpoint: treat as an ordinary account.
+    api(`/validator/${address}?limit=25`).catch(() => ({ validator: null, blocks_proposed: 0, blocks: [] })),
+  ]);
   const heights = [...new Set(txs.map((t) => t.height))];
   const times = new Map();
   for (const b of state.blocks) times.set(b.height, b.timestamp_ms);
@@ -601,25 +607,61 @@ async function renderAddressPage(address) {
   }));
   const rows = txs.map((t) => ({ ...t, ts: times.get(t.height) || null }));
   const sent = txs.find((t) => t.sender === address && t.scheme);
-  return [
-    h("h1", { class: "page-title" }, state.status && address === state.status.fee_pool ? "Fee Pool" : "Address", h("span", { class: "mono" }, address), copyBtn(address)),
-    state.status && address === state.status.fee_pool
-      ? h("p", { class: "muted" }, `System account. It collects every transaction fee and pays the balance to validators, by voting power, every ${num(state.status.epoch_blocks)} blocks.`)
-      : null,
-    h("div", { class: "split" },
-      h("section", { class: "card" }, h("div", { class: "card-head" }, "Overview"),
-        h("div", { class: "kv-mini" },
-          h("div", { class: "k" }, "STEIN Balance"), h("div", { class: "v" }, h("b", {}, `${account.balance_stein} STEIN`)),
-          h("div", { class: "k" }, "STEIN Value"), h("div", { class: "v muted" }, "N/A (devnet: no market)"))),
-      h("section", { class: "card" }, h("div", { class: "card-head" }, "More Info"),
-        h("div", { class: "kv-mini" },
-          h("div", { class: "k" }, "Transactions Sent"), h("div", { class: "v" }, num(account.nonce)),
-          h("div", { class: "k" }, "Public Key On Chain"), h("div", { class: "v" }, account.key_registered ? h("span", { class: "pill ok" }, "Registered") : h("span", { class: "pill" }, "Not yet: registered by its first transaction")),
-          h("div", { class: "k" }, "Signature Scheme"), h("div", { class: "v" }, sent ? schemePill(sent.scheme) : h("span", { class: "muted" }, "Unknown until it sends"))))),
+  const isPool = state.status && address === state.status.fee_pool;
+  const v = role.validator;
+  const epoch = state.status ? state.status.epoch_blocks : null;
+
+  const title = isPool ? "Fee Pool" : v ? "Validator" : "Address";
+  const intro = isPool
+    ? `System account. It collects every transaction fee and pays the balance to validators, by voting power, every ${num(epoch)} blocks.`
+    : v ? `Active validator. It proposes and signs blocks; it does not send transactions. Its earnings arrive as fee-pool payouts${epoch ? ` every ${num(epoch)} blocks` : ""}, which are credits, not transactions.` : null;
+
+  const overview = [
+    h("div", { class: "k" }, "STEIN Balance"), h("div", { class: "v" }, h("b", {}, `${account.balance_stein} STEIN`)),
+    h("div", { class: "k" }, "STEIN Value"), h("div", { class: "v muted" }, "N/A (devnet: no market)"),
+  ];
+  if (v) overview.push(h("div", { class: "k" }, "Earnings"), h("div", { class: "v" }, "Fee-pool payouts by voting power, credited at each epoch boundary"));
+
+  const info = v ? [
+    h("div", { class: "k" }, "Role"), h("div", { class: "v" }, h("span", { class: "pill ok" }, "✓ Active validator")),
+    h("div", { class: "k" }, "Consensus Key"), h("div", { class: "v" }, schemePill(v.scheme), h("span", { class: "muted small" }, "in the validator set since genesis")),
+    h("div", { class: "k" }, "Voting Power"), h("div", { class: "v" }, `${num(v.power)} (${(v.share * 100).toFixed(2)}% of the set)`),
+    h("div", { class: "k" }, "Blocks Proposed"), h("div", { class: "v" }, num(role.blocks_proposed)),
+  ] : isPool ? [
+    h("div", { class: "k" }, "Kind"), h("div", { class: "v" }, h("span", { class: "pill info" }, "System account"), h("span", { class: "muted small" }, "no key can control it")),
+    h("div", { class: "k" }, "Payout Interval"), h("div", { class: "v" }, epoch ? `every ${num(epoch)} blocks` : "—"),
+  ] : [
+    h("div", { class: "k" }, "Transactions Sent"), h("div", { class: "v" }, num(account.nonce)),
+    h("div", { class: "k" }, "Public Key On Chain"), h("div", { class: "v" }, account.key_registered ? h("span", { class: "pill ok" }, "Registered") : h("span", { class: "pill" }, "Not yet: registered by its first transaction")),
+    h("div", { class: "k" }, "Signature Scheme"), h("div", { class: "v" }, sent ? schemePill(sent.scheme) : h("span", { class: "muted" }, "Unknown until it sends")),
+  ];
+
+  const sections = [];
+  if (v) {
+    sections.push(
+      h("div", { class: "tabs" }, h("span", { class: "tab" }, "Validated Blocks")),
+      h("section", { class: "card" },
+        h("div", { class: "card-head" }, h("span", { class: "muted small" }, `${num(role.blocks_proposed)} blocks proposed · latest ${role.blocks.length} shown`)),
+        table(["Block", "Age", "Txn", "Size", "Fees"], role.blocks.map((b) => [
+          linkBlock(b.height), agoEl(b.timestamp_ms), h("a", { href: `#/block/${b.height}` }, String(b.tx_count)),
+          b.size === null ? "—" : bytes(b.size), b.fees_stein === undefined ? "—" : `${b.fees_stein} STEIN`]))),
+      h("div", { class: "spacer" }));
+  }
+  sections.push(
     h("div", { class: "tabs" }, h("span", { class: "tab" }, "Transactions")),
     h("section", { class: "card" },
-      h("div", { class: "card-head" }, h("span", { class: "muted small" }, `Latest ${txs.length} transaction${txs.length === 1 ? "" : "s"}`)),
-      table(TX_HEADERS(), txRows(rows))),
+      h("div", { class: "card-head" }, h("span", { class: "muted small" },
+        txs.length ? `Latest ${txs.length} transaction${txs.length === 1 ? "" : "s"}`
+          : v || isPool ? "None: payouts and fees are credits, not transactions" : "No transactions yet")),
+      table(TX_HEADERS(), txRows(rows))));
+
+  return [
+    h("h1", { class: "page-title" }, title, h("span", { class: "mono" }, address), copyBtn(address)),
+    intro ? h("p", { class: "muted" }, intro) : null,
+    h("div", { class: "split" },
+      h("section", { class: "card" }, h("div", { class: "card-head" }, "Overview"), h("div", { class: "kv-mini" }, overview)),
+      h("section", { class: "card" }, h("div", { class: "card-head" }, "More Info"), h("div", { class: "kv-mini" }, info))),
+    ...sections,
   ];
 }
 

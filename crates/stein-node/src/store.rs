@@ -30,6 +30,8 @@ pub struct Store {
     /// Transactions touching each address (as sender or recipient), oldest
     /// first. For explorers; production moves this to an indexer (SPEC §11.1).
     by_address: HashMap<Address, Vec<TxLocation>>,
+    /// Heights of the blocks each validator proposed, oldest first.
+    by_proposer: HashMap<Address, Vec<Height>>,
     retention: u64,
     /// Transactions in all blocks held.
     tx_total: u64,
@@ -84,6 +86,7 @@ impl Store {
                 blocks: Vec::new(),
                 tx_index: HashMap::new(),
                 by_address: HashMap::new(),
+                by_proposer: HashMap::new(),
                 tx_total: 0,
                 retention,
             },
@@ -102,6 +105,10 @@ impl Store {
             self.log.sync_data()?;
         }
         let height = block.header.height;
+        self.by_proposer
+            .entry(block.header.proposer)
+            .or_default()
+            .push(height);
         for (index, body) in block.bodies.iter().enumerate() {
             let at = TxLocation {
                 height,
@@ -166,6 +173,14 @@ impl Store {
     /// Height of the newest block held.
     pub fn tip(&self) -> Height {
         self.blocks.last().map_or(0, |b| b.header.height)
+    }
+
+    /// How many blocks `proposer` proposed, and the heights of the latest
+    /// `limit`, newest first.
+    pub fn proposed(&self, proposer: &Address, limit: usize) -> (usize, Vec<Height>) {
+        self.by_proposer.get(proposer).map_or((0, Vec::new()), |v| {
+            (v.len(), v.iter().rev().take(limit).copied().collect())
+        })
     }
 
     /// Up to `limit` locations of transactions touching `address`, newest first.
