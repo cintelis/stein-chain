@@ -22,3 +22,15 @@ pub type ChainId = u64;
 
 /// Block height. Genesis state is height 0; the first block is height 1.
 pub type Height = u64;
+
+/// Total supply is always below 2^127 base units, so no balance plus any
+/// credit can overflow: credits never fail (SHARD-READY I-1). Enforced at
+/// genesis; any future issuance must keep it.
+pub const MAX_TOTAL_SUPPLY: Amount = (1u128 << 127) - 1;
+
+/// The fee pool: a system account that collects every transaction fee and
+/// pays it out to validators at epoch boundaries, so no transaction has to
+/// credit the proposer directly (SHARD-READY I-6).
+pub fn fee_pool() -> Address {
+    Address::system("fee pool")
+}

@@ -39,6 +39,7 @@ fn setup_validator(dir: &Path, chain_id: u64) -> (SecretKey, Genesis) {
 
 fn pay(alice: &SecretKey, chain_id: u64, nonce: u64) -> Transaction {
     let body = TxBody {
+        version: TxBody::VERSION,
         chain_id,
         sender: alice.address(),
         nonce,

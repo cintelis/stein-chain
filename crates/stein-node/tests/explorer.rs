@@ -40,6 +40,7 @@ fn setup(dir: &std::path::Path) -> (SecretKey, Genesis) {
 
 fn pay(alice: &SecretKey, nonce: u64, to: Address) -> Transaction {
     let body = TxBody {
+        version: TxBody::VERSION,
         chain_id: 11,
         sender: alice.address(),
         nonce,

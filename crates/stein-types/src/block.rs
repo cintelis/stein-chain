@@ -33,6 +33,9 @@ impl Witness {
 /// What the proposer signs and what consensus agrees on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct BlockHeader {
+    /// Format version ([`BlockHeader::VERSION`]). Bumped only by protocol
+    /// upgrades, e.g. when sharding adds fields (SHARD-READY I-7).
+    pub version: u8,
     /// Network.
     pub chain_id: ChainId,
     /// Height of this block (first block is 1).
@@ -54,6 +57,9 @@ pub struct BlockHeader {
 }
 
 impl BlockHeader {
+    /// The block format this software produces and accepts.
+    pub const VERSION: u8 = 1;
+
     /// The block hash.
     pub fn hash(&self) -> Hash {
         hash(BLOCK_CONTEXT, &[&self.encode()])

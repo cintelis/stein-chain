@@ -75,6 +75,7 @@ fn run(scheme: Scheme) {
             .enumerate()
             .map(|(i, k)| {
                 let body = TxBody {
+                    version: TxBody::VERSION,
                     chain_id: 1,
                     sender: k.address(),
                     nonce: round as u64,

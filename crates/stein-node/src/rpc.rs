@@ -95,6 +95,15 @@ pub struct Status {
     /// Target time between blocks.
     #[serde(default)]
     pub block_time_ms: u64,
+    /// Shard this node serves. Always 0 until sharding (SHARD-READY I-8).
+    #[serde(default)]
+    pub shard_id: u16,
+    /// The system account that collects fees until each epoch's payout.
+    #[serde(default)]
+    pub fee_pool: Option<Address>,
+    /// Blocks per epoch (fee pool payout interval).
+    #[serde(default)]
+    pub epoch_blocks: u64,
 }
 
 async fn status(AxumState(node): AxumState<Arc<Node>>) -> Json<Status> {
@@ -122,6 +131,9 @@ async fn status(AxumState(node): AxumState<Arc<Node>>) -> Json<Status> {
         accounts: state.account_count(),
         total_supply_stein: format_amount(node.genesis.total_supply().unwrap_or(0)),
         block_time_ms: state.params().block_time_ms,
+        shard_id: 0,
+        fee_pool: Some(stein_types::fee_pool()),
+        epoch_blocks: state.params().epoch_blocks,
     })
 }
 

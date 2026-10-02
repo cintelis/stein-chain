@@ -31,6 +31,9 @@ pub struct ChainParams {
     pub tx_schemes: Vec<Scheme>,
     /// Signature schemes accepted for validator consensus keys.
     pub validator_schemes: Vec<Scheme>,
+    /// Blocks per epoch. At each epoch boundary the fee pool is paid out to
+    /// the validators by voting power (SHARD-READY I-6).
+    pub epoch_blocks: u64,
 }
 
 impl Default for ChainParams {
@@ -46,6 +49,7 @@ impl Default for ChainParams {
             witness_retention_blocks: 21_600,
             tx_schemes: vec![Scheme::MlDsa44, Scheme::MlDsa65],
             validator_schemes: vec![Scheme::MlDsa44, Scheme::MlDsa65],
+            epoch_blocks: 3_600,
         }
     }
 }

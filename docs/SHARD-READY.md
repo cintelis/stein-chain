@@ -123,11 +123,12 @@ hours. Closing them after mainnet would take hard forks.
 
 ## 5. Checklist before testnet genesis
 
-- [ ] Genesis rejects total supply ≥ 2¹²⁷; the issuance schedule is proven to
-      stay below it (I-1)
+- [x] Genesis rejects total supply ≥ 2¹²⁷ (`GenesisError::SupplyTooLarge`).
+      Any future issuance must keep below it (I-1)
 - [ ] Jellyfish Merkle Tree keyed by address nibbles (I-4, phase 2)
-- [ ] Fee pool with per-epoch distribution replaces per-transaction proposer
-      credit (I-6)
-- [ ] `version` field in block header and transaction (I-7)
-- [ ] RPC exposes `shard_id: 0`; steinscan schema includes it (I-8)
+- [x] Fee pool (system account) with per-epoch payout by voting power
+      replaces per-transaction proposer credit (I-6)
+- [x] `version` field in block header and transaction body; unknown versions
+      are refused (I-7)
+- [x] RPC exposes `shard_id: 0` in `/status` and block views (I-8)
 - [ ] New transaction types reviewed against I-1 and I-2 (standing rule)

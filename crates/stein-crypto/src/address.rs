@@ -13,6 +13,7 @@ use crate::keys::PublicKey;
 
 const ADDRESS_CONTEXT: &str = "stein address v2";
 const CHECKSUM_CONTEXT: &str = "stein address checksum v1";
+const SYSTEM_CONTEXT: &str = "stein system account v1";
 const PREFIX: &str = "st";
 const CHECKSUM_LEN: usize = 4;
 
@@ -27,6 +28,12 @@ impl Address {
     /// The address that `key` controls.
     pub fn from_public_key(key: &PublicKey) -> Self {
         Self(hash(ADDRESS_CONTEXT, &[&[key.scheme().tag()], key.as_bytes()]).0)
+    }
+
+    /// The address of a protocol-owned system account, e.g. the fee pool.
+    /// Derived in its own hash domain, so no key can ever control it.
+    pub fn system(name: &str) -> Self {
+        Self(hash(SYSTEM_CONTEXT, &[name.as_bytes()]).0)
     }
 
     fn checksum(&self) -> [u8; CHECKSUM_LEN] {

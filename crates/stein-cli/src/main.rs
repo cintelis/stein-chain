@@ -145,6 +145,7 @@ async fn main() -> Result<()> {
             let account: AccountView = get(rpc, &format!("/account/{}", key.address())).await?;
 
             let mut body = TxBody {
+                version: TxBody::VERSION,
                 chain_id: status.chain_id,
                 sender: key.address(),
                 nonce: account.nonce,

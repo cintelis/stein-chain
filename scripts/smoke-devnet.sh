@@ -88,9 +88,9 @@ carol=$("$wallet" keygen --scheme ml-dsa-65 --out "$dir/carol.seed" 2>/dev/null)
 "$wallet" --rpc "$rpc" send --key "$dir/carol.seed" --to "$bob" --amount 15
 
 # Fees are 10 base units per byte: bob paid one key-registering ML-DSA-44
-# transfer (3,856 B), carol one key-registering ML-DSA-65 transfer (5,385 B).
-expect "bob before restart" "74.99996144" "$(balance "$bob")"
-expect "carol before restart" "24.99994615" "$(balance "$carol")"
+# transfer (3,857 B), carol one key-registering ML-DSA-65 transfer (5,386 B).
+expect "bob before restart" "74.99996143" "$(balance "$bob")"
+expect "carol before restart" "24.99994614" "$(balance "$carol")"
 
 # A typo in an address must be caught by its checksum, not sent.
 typo="${bob%?}$([ "${bob: -1}" = 0 ] && echo 1 || echo 0)"
@@ -103,8 +103,8 @@ stop_node
 start_node
 grep -q "replayed and re-verified block log height=3" "$dir/node.log" \
   || { echo "smoke: restart did not replay 3 blocks" >&2; exit 1; }
-expect "bob after restart" "74.99996144" "$(balance "$bob")"
-expect "carol after restart" "24.99994615" "$(balance "$carol")"
+expect "bob after restart" "74.99996143" "$(balance "$bob")"
+expect "carol after restart" "24.99994614" "$(balance "$carol")"
 
 # --- Node to node ------------------------------------------------------------
 genesis_hash=$(field "$rpc" genesis_hash)
@@ -119,8 +119,8 @@ expect "follower role" "follower" "$(field "$follower_rpc" role)"
 # then downloads and re-verifies the block that includes it.
 "$wallet" --rpc "$follower_rpc" send --key "$dir/bob.seed" --to "$carol" --amount 4
 wait_height "$follower_rpc" 4
-expect "carol on validator" "28.99994615" "$(balance "$carol")"
-expect "carol on follower" "28.99994615" "$(balance "$carol" "$follower_rpc")"
+expect "carol on validator" "28.99994614" "$(balance "$carol")"
+expect "carol on follower" "28.99994614" "$(balance "$carol" "$follower_rpc")"
 expect "bob on follower" "$(balance "$bob")" "$(balance "$bob" "$follower_rpc")"
 expect "state roots agree" "$(field "$rpc" state_root)" "$(field "$follower_rpc" state_root)"
 

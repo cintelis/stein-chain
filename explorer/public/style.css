@@ -118,7 +118,9 @@ main { min-height: 60vh; }
 .ov-col + .ov-col { border-left: 1px solid var(--line); }
 .ov-item { display: flex; gap: 12px; align-items: center; }
 .ov-item + .ov-item { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-.ov-icon { width: 30px; height: 30px; flex: none; border-radius: 50%; background: var(--soft); color: var(--primary); display: grid; place-items: center; font-size: 14px; font-weight: 700; }
+/* Overview icons share the S logo's style: white lines on the brand blue. */
+.ov-icon { width: 34px; height: 34px; flex: none; border-radius: 50%; background: var(--primary); color: #fff; display: grid; place-items: center; }
+.ov-icon svg { display: block; }
 .ov-label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .ov-value { font-size: 15.5px; font-weight: 500; }
 .ov-value .small { font-weight: 400; }
@@ -204,3 +206,8 @@ tbody tr:hover td { background: var(--head); }
 [hidden] { display: none !important; }
 
 .sq svg { display: block; }
+
+
+/* Search buttons carry the Lucide search icon. */
+.nav-search button, .hero-search button { display: grid; place-items: center; padding: 0; }
+.nav-search button svg, .hero-search button svg { display: block; }

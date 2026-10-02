@@ -61,16 +61,30 @@ function svg(tag, attrs) {
 }
 const $ = (id) => document.getElementById(id);
 
-// List icons, drawn here (no icon font: the CSP allows nothing external).
-// A cube for blocks, a document for transactions.
+// Icons: Lucide (lucide.dev, ISC licence), inlined as shape data because the
+// Content-Security-Policy allows nothing external. Each shape is
+// [svg element, attributes].
+const P = (d) => ["path", { d }];
 const ICONS = {
-  block: ["M12 2.6 20.4 7.2v9.6L12 21.4 3.6 16.8V7.2Z", "M3.6 7.2 12 11.8l8.4-4.6", "M12 11.8v9.6"],
-  tx: ["M6.2 2.6h8.1l4.5 4.5v14.3H6.2Z", "M14.3 2.6v4.5h4.5", "M9 12.2h6.8", "M9 15.4h6.8", "M9 18.6h4.2"],
+  stone: [ // STEIN token mark
+    P("M11.264 2.205A4 4 0 0 0 6.42 4.211l-4 8a4 4 0 0 0 1.359 5.117l6 4a4 4 0 0 0 4.438 0l6-4a4 4 0 0 0 1.576-4.592l-2-6a4 4 0 0 0-2.53-2.53z"),
+    P("M11.99 22 14 12l7.822 3.184"), P("M14 12 8.47 2.302")],
+  users: [
+    P("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"), P("M16 3.128a4 4 0 0 1 0 7.744"),
+    P("M22 21v-2a4 4 0 0 0-3-3.87"), ["circle", { cx: 9, cy: 7, r: 4 }]],
+  transfer: [P("M8 3 4 7l4 4"), P("M4 7h16"), P("m16 21 4-4-4-4"), P("M20 17H4")],
+  block: [ // Lucide "box"
+    P("M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"),
+    P("m3.3 7 8.7 5 8.7-5"), P("M12 22V12")],
+  search: [P("m21 21-4.34-4.34"), ["circle", { cx: 11, cy: 11, r: 8 }]],
+  tx: [ // Lucide "file-text"
+    P("M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"),
+    P("M14 2v5a1 1 0 0 0 1 1h5"), P("M10 9H8"), P("M16 13H8"), P("M16 17H8")],
 };
-function icon(kind) {
-  const el = svg("svg", { viewBox: "0 0 24 24", width: 20, height: 20, fill: "none", stroke: "currentColor",
-    "stroke-width": 1.6, "stroke-linejoin": "round", "stroke-linecap": "round", "aria-hidden": "true" });
-  for (const d of ICONS[kind]) el.append(svg("path", { d }));
+function icon(kind, size = 20, weight = 1.8) {
+  const el = svg("svg", { viewBox: "0 0 24 24", width: size, height: size, fill: "none", stroke: "currentColor",
+    "stroke-width": weight, "stroke-linejoin": "round", "stroke-linecap": "round", "aria-hidden": "true" });
+  for (const [tag, attrs] of ICONS[kind]) el.append(svg(tag, attrs));
   return el;
 }
 
@@ -103,7 +117,12 @@ function num(n) { return Number(n).toLocaleString(); }
 
 function linkTx(id, full) { return h("a", { href: `#/tx/${id}`, class: "mono" }, full ? id : short(id)); }
 function linkBlock(height) { return h("a", { href: `#/block/${height}` }, String(height)); }
-function linkAddr(addr, full) { return h("a", { href: `#/address/${addr}`, class: "mono", title: addr }, full ? addr : short(addr, 9, 7)); }
+function linkAddr(addr, full) {
+  if (state.status && addr === state.status.fee_pool) {
+    return h("a", { href: `#/address/${addr}`, title: `${addr} (system account: collects fees, paid to validators each epoch)` }, "Fee Pool");
+  }
+  return h("a", { href: `#/address/${addr}`, class: "mono", title: addr }, full ? addr : short(addr, 9, 7));
+}
 function agoEl(ms) { return h("span", { class: "ago", "data-ts": ms }, ago(ms)); }
 function help(text) { return h("span", { class: "help", title: text, "aria-label": text }, "?"); }
 function copyBtn(text) {
@@ -255,7 +274,7 @@ function heroSearch() {
   const input = h("input", { type: "search", autocomplete: "off", spellcheck: "false", "aria-label": "Search",
     placeholder: "Search by Address / Txn Hash / Block" });
   return h("form", { class: "hero-search", role: "search", onsubmit: (e) => { e.preventDefault(); go(input.value, select.value); } },
-    select, input, h("button", { type: "submit", "aria-label": "Search" }, "⌕"));
+    select, input, h("button", { type: "submit", "aria-label": "Search" }, icon("search", 22, 2.4)));
 }
 
 function renderHome(app) {
@@ -286,8 +305,9 @@ function tps() {
   return count / (TPS_WINDOW_MS / 1000);
 }
 
-function ovItem(icon, label, ...value) {
-  return h("div", { class: "ov-item" }, h("div", { class: "ov-icon", "aria-hidden": "true" }, icon),
+function ovItem(mark, label, ...value) {
+  return h("div", { class: "ov-item" },
+    h("div", { class: "ov-icon", "aria-hidden": "true" }, icon(mark, 19, 2)),
     h("div", {}, h("div", { class: "ov-label" }, label), h("div", { class: "ov-value" }, ...value)));
 }
 
@@ -318,11 +338,11 @@ function renderOverview() {
   const latest = state.blocks[0];
   el.replaceChildren(
     h("div", { class: "ov-col" },
-      ovItem("Σ", "STEIN supply", s.total_supply_stein ? `${num(Number(s.total_supply_stein))} STEIN` : "—"),
-      ovItem("◎", "Accounts", s.accounts ? num(s.accounts) : "—")),
+      ovItem("stone", "STEIN supply", s.total_supply_stein ? `${num(Number(s.total_supply_stein))} STEIN` : "—"),
+      ovItem("users", "Accounts", s.accounts ? num(s.accounts) : "—")),
     h("div", { class: "ov-col" },
-      ovItem("⇄", "Transactions", s.tx_total === undefined ? "—" : num(s.tx_total), " ", h("span", { class: "small muted" }, `(${tps().toFixed(2)} TPS)`)),
-      ovItem("▣", "Last finalized block", num(s.height), " ", h("span", { class: "small muted" }, latest ? `(${ago(latest.timestamp_ms)})` : ""))),
+      ovItem("transfer", "Transactions", s.tx_total === undefined ? "—" : num(s.tx_total), " ", h("span", { class: "small muted" }, `(${tps().toFixed(2)} TPS)`)),
+      ovItem("block", "Last finalized block", num(s.height), " ", h("span", { class: "small muted" }, latest ? `(${ago(latest.timestamp_ms)})` : ""))),
     h("div", { class: "ov-col" },
       h("div", { class: "spark-title" }, `Transactions per block · last ${Math.min(state.blocks.length, SPARK_BLOCKS)} blocks`),
       state.blocks.length ? sparkline(state.blocks) : h("div", { class: "muted small" }, "No blocks yet.")),
@@ -582,7 +602,10 @@ async function renderAddressPage(address) {
   const rows = txs.map((t) => ({ ...t, ts: times.get(t.height) || null }));
   const sent = txs.find((t) => t.sender === address && t.scheme);
   return [
-    h("h1", { class: "page-title" }, "Address", h("span", { class: "mono" }, address), copyBtn(address)),
+    h("h1", { class: "page-title" }, state.status && address === state.status.fee_pool ? "Fee Pool" : "Address", h("span", { class: "mono" }, address), copyBtn(address)),
+    state.status && address === state.status.fee_pool
+      ? h("p", { class: "muted" }, `System account. It collects every transaction fee and pays the balance to validators, by voting power, every ${num(state.status.epoch_blocks)} blocks.`)
+      : null,
     h("div", { class: "split" },
       h("section", { class: "card" }, h("div", { class: "card-head" }, "Overview"),
         h("div", { class: "kv-mini" },
@@ -650,6 +673,7 @@ $("node-select").addEventListener("change", (e) => {
   }
   switchNode(url.replace(/\/+$/, ""));
 });
+$("nav-search").querySelector("button").replaceChildren(icon("search", 20, 2.4));
 $("nav-search").addEventListener("submit", (e) => { e.preventDefault(); go($("nav-search-input").value); });
 window.addEventListener("hashchange", () => { banner(""); render(); window.scrollTo(0, 0); });
 setInterval(() => { for (const el of document.querySelectorAll(".ago")) el.textContent = ago(Number(el.dataset.ts)); }, 1000);

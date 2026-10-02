@@ -37,6 +37,7 @@ fn setup(dir: &Path) -> SecretKey {
 
 fn pay(alice: &SecretKey, nonce: u64) -> Transaction {
     let body = TxBody {
+        version: TxBody::VERSION,
         chain_id: 9,
         sender: alice.address(),
         nonce,
@@ -110,8 +111,8 @@ async fn a_tampered_block_log_is_refused() {
     // Flip one byte inside the first transaction body's amount field region.
     let path = dir.path().join(files::BLOCK_LOG);
     let mut bytes = std::fs::read(&path).expect("read");
-    // log length prefix, header, tagged ML-DSA-44 proposer signature, body count
-    let header_and_sig = 4 + 8 + 8 + 32 + 8 + 32 + 4 + 32 * 3 + 1 + 2420 + 4;
+    // log length prefix, header (with version), tagged ML-DSA-44 proposer signature, body count
+    let header_and_sig = 4 + 1 + 8 + 8 + 32 + 8 + 32 + 4 + 32 * 3 + 1 + 2420 + 4;
     bytes[header_and_sig + 50] ^= 0x01;
     std::fs::write(&path, bytes).expect("write");
     assert!(Node::open(dir.path()).is_err());

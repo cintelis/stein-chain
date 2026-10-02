@@ -92,6 +92,7 @@ impl Rpc {
         amount: Amount,
     ) -> Result<(u64, Amount)> {
         let mut body = TxBody {
+            version: TxBody::VERSION,
             chain_id: status.chain_id,
             sender: key.address(),
             nonce,

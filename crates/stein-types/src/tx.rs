@@ -24,6 +24,9 @@ pub enum Action {
 /// The part of a transaction that is executed and kept forever.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct TxBody {
+    /// Format version ([`TxBody::VERSION`]). Bumped only by protocol upgrades;
+    /// a node rejects versions it does not know (SHARD-READY I-7).
+    pub version: u8,
     /// Network this transaction is valid on.
     pub chain_id: ChainId,
     /// Paying and authorising account.
@@ -41,6 +44,9 @@ pub struct TxBody {
 const TXID_CONTEXT: &str = "stein txid v1";
 
 impl TxBody {
+    /// The transaction format this software produces and accepts.
+    pub const VERSION: u8 = 1;
+
     /// Canonical encoding: what is signed and what the id covers.
     pub fn encode(&self) -> Vec<u8> {
         borsh::to_vec(self).unwrap_or_default()
@@ -67,6 +73,9 @@ pub struct Transaction {
 /// Why a transaction was rejected.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TxError {
+    /// A transaction format this node does not support.
+    #[error("unsupported transaction version {0}")]
+    UnsupportedVersion(u8),
     /// Signed for another network.
     #[error("wrong chain id: expected {expected}, got {got}")]
     WrongChain {
@@ -169,6 +178,9 @@ impl Transaction {
         params: &ChainParams,
         height: Height,
     ) -> Result<(), TxError> {
+        if self.body.version != TxBody::VERSION {
+            return Err(TxError::UnsupportedVersion(self.body.version));
+        }
         if self.body.chain_id != chain_id {
             return Err(TxError::WrongChain {
                 expected: chain_id,
@@ -228,6 +240,7 @@ mod tests {
 
     fn body(sender: Address) -> TxBody {
         TxBody {
+            version: TxBody::VERSION,
             chain_id: 7,
             sender,
             nonce: 0,

@@ -5,7 +5,7 @@
 #   - `init --enable-fn-dsa` creates a separate network (chain 31338) whose
 #     faucet is an FN-DSA account and whose validator stays on ML-DSA;
 #   - FN-DSA and ML-DSA accounts transfer to each other, at the measured sizes
-#     (1,687 bytes with key registration, 789 bytes after) and exact fees;
+#     (1,688 bytes with key registration, 790 bytes after) and exact fees;
 #   - a follower re-verifies the FN-DSA signatures and agrees on the state root;
 #   - the standard devnet (no --enable-fn-dsa) still refuses FN-DSA keys.
 #
@@ -88,13 +88,13 @@ send() { # <key> <to> <amount> [rpc] -> prints the encoded size
     | sed -nE 's/.*\(([0-9]+) bytes.*/\1/p'
 }
 
-expect "FN-DSA transfer, registering the key" "1687" "$(send "$dir/chain/faucet.seed" "$frank" 100)"
-expect "FN-DSA transfer, key registered" "789" "$(send "$dir/chain/faucet.seed" "$frank" 1)"
-expect "FN-DSA account to ML-DSA account" "1687" "$(send "$dir/frank.seed" "$mary" 30)"
-expect "ML-DSA account to FN-DSA account" "3856" "$(send "$dir/mary.seed" "$frank" 5)"
-# Fees at 10 base units per byte: frank paid 1,687 B; mary paid 3,856 B.
-expect "frank" "75.99998313" "$(balance "$frank")"
-expect "mary" "24.99996144" "$(balance "$mary")"
+expect "FN-DSA transfer, registering the key" "1688" "$(send "$dir/chain/faucet.seed" "$frank" 100)"
+expect "FN-DSA transfer, key registered" "790" "$(send "$dir/chain/faucet.seed" "$frank" 1)"
+expect "FN-DSA account to ML-DSA account" "1688" "$(send "$dir/frank.seed" "$mary" 30)"
+expect "ML-DSA account to FN-DSA account" "3857" "$(send "$dir/mary.seed" "$frank" 5)"
+# Fees at 10 base units per byte: frank paid 1,688 B; mary paid 3,857 B.
+expect "frank" "75.99998312" "$(balance "$frank")"
+expect "mary" "24.99996143" "$(balance "$mary")"
 
 # A follower re-verifies every FN-DSA signature before applying a block.
 "$node" --data-dir "$dir/follower" follow --leader "$rpc" --genesis-hash "$(field "$rpc" genesis_hash)" \
@@ -102,7 +102,7 @@ expect "mary" "24.99996144" "$(balance "$mary")"
 pids+=($!)
 wait_up "$follower_rpc"
 wait_height "$follower_rpc" "$(field "$rpc" height)"
-expect "follower: frank" "75.99998313" "$(balance "$frank" "$follower_rpc")"
+expect "follower: frank" "75.99998312" "$(balance "$frank" "$follower_rpc")"
 expect "state roots agree" "$(field "$rpc" state_root)" "$(field "$follower_rpc" state_root)"
 
 echo "smoke-fn-dsa: ok"

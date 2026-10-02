@@ -65,6 +65,10 @@ pub enum GenesisError {
     /// Total supply overflows.
     #[error("total supply overflows")]
     SupplyOverflow,
+    /// Total supply at or above 2^127 base units: a credit could then
+    /// overflow, and credits must never fail (SHARD-READY I-1).
+    #[error("total supply must be below 2^127 base units")]
+    SupplyTooLarge,
 }
 
 impl Genesis {
@@ -120,7 +124,9 @@ impl Genesis {
                 return Err(GenesisError::DuplicateAllocation(a.address));
             }
         }
-        self.total_supply().ok_or(GenesisError::SupplyOverflow)?;
+        if self.total_supply().ok_or(GenesisError::SupplyOverflow)? > crate::MAX_TOTAL_SUPPLY {
+            return Err(GenesisError::SupplyTooLarge);
+        }
         Ok(())
     }
 }

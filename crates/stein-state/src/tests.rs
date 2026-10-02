@@ -48,6 +48,7 @@ fn transfer(
     register: bool,
 ) -> Transaction {
     let body = TxBody {
+        version: TxBody::VERSION,
         chain_id: CHAIN,
         sender: from.address(),
         nonce,
@@ -64,7 +65,7 @@ fn produce(state: &mut State, n: &Net, txs: Vec<Transaction>) -> (Block, Vec<(Ha
 }
 
 #[test]
-fn a_transfer_moves_funds_pays_the_proposer_and_registers_the_key() {
+fn a_transfer_moves_funds_pays_the_fee_pool_and_registers_the_key() {
     let n = net();
     let mut state = State::from_genesis(&n.genesis).expect("genesis");
     let tx = transfer(&n.alice, n.bob.address(), 10 * ONE_STEIN, 0, true);
@@ -81,12 +82,96 @@ fn a_transfer_moves_funds_pays_the_proposer_and_registers_the_key() {
         state.account(&n.bob.address()).expect("bob").balance,
         10 * ONE_STEIN
     );
+    // Fees collect in the fee pool, not with the proposer (SHARD-READY I-6).
     assert_eq!(
         state
-            .account(&n.validator.address())
-            .expect("validator")
+            .account(&stein_types::fee_pool())
+            .expect("pool")
             .balance,
         fee
+    );
+    assert!(state.account(&n.validator.address()).is_none());
+}
+
+#[test]
+fn the_fee_pool_pays_validators_at_each_epoch_boundary() {
+    let mut n = net();
+    let second = key(8);
+    n.genesis.params.epoch_blocks = 2;
+    n.genesis.validators.push(GenesisValidator {
+        public_key: second.public_key().clone(),
+        power: 3,
+    });
+    let mut leader = State::from_genesis(&n.genesis).expect("genesis");
+    let mut follower = State::from_genesis(&n.genesis).expect("genesis");
+    let fee = ONE_STEIN / 100;
+
+    // Proposers alternate by height; each signs the block it proposes.
+    for height in 1..=4u64 {
+        let nonce = height - 1;
+        let proposer = if leader.proposer_for(height).key.address() == n.validator.address() {
+            &n.validator
+        } else {
+            &second
+        };
+        let tx = transfer(&n.alice, n.bob.address(), ONE_STEIN, nonce, nonce == 0);
+        let (block, rejected) = leader
+            .build_block(vec![tx], proposer, 10_000 + height * 1_000)
+            .expect("build");
+        assert!(rejected.is_empty(), "{rejected:?}");
+        follower.import_block(&block).expect("import");
+        assert_eq!(follower.state_root(), leader.state_root());
+
+        let pool = leader
+            .account(&stein_types::fee_pool())
+            .map_or(0, |a| a.balance);
+        if height % 2 == 1 {
+            assert_eq!(pool, fee, "mid-epoch: the fee waits in the pool");
+        } else {
+            // Paid out 1:3 by power: 0.02 STEIN in the pool after two blocks.
+            assert_eq!(pool, 0, "epoch boundary at height {height}: pool emptied");
+        }
+    }
+    let one = leader
+        .account(&n.validator.address())
+        .map_or(0, |a| a.balance);
+    let three = leader.account(&second.address()).map_or(0, |a| a.balance);
+    assert_eq!((one, three), (fee, 3 * fee), "four fees split 1:3");
+}
+
+#[test]
+fn genesis_rejects_a_supply_that_could_overflow_a_credit() {
+    let mut n = net();
+    n.genesis.allocations[0].amount = stein_types::MAX_TOTAL_SUPPLY;
+    assert!(State::from_genesis(&n.genesis).is_ok());
+    n.genesis.allocations[0].amount = stein_types::MAX_TOTAL_SUPPLY + 1;
+    assert!(matches!(
+        State::from_genesis(&n.genesis),
+        Err(GenesisError::SupplyTooLarge)
+    ));
+}
+
+#[test]
+fn unknown_formats_are_refused() {
+    let n = net();
+    let mut leader = State::from_genesis(&n.genesis).expect("genesis");
+    let mut follower = State::from_genesis(&n.genesis).expect("genesis");
+    let mut future = transfer(&n.alice, n.bob.address(), ONE_STEIN, 0, true);
+    future.body.version = 2;
+    assert_eq!(
+        leader.check_transaction(&future, None),
+        Err(TxError::UnsupportedVersion(2))
+    );
+
+    let (mut block, _) = produce(&mut leader, &n, vec![]);
+    block.header.version = 2;
+    block.proposer_signature = n
+        .validator
+        .sign(Domain::Proposal, &block.header.encode())
+        .expect("sign");
+    assert_eq!(
+        follower.import_block(&block),
+        Err(BlockError::UnsupportedVersion(2))
     );
 }
 
@@ -327,10 +412,15 @@ fn supply_is_conserved() {
         &n,
         vec![transfer(&n.bob, n.alice.address(), ONE_STEIN, 0, true)],
     );
-    let total: Amount = [&n.alice, &n.bob, &n.validator]
-        .iter()
-        .map(|k| state.account(&k.address()).map_or(0, |a| a.balance))
-        .sum();
+    let total: Amount = [
+        n.alice.address(),
+        n.bob.address(),
+        n.validator.address(),
+        stein_types::fee_pool(),
+    ]
+    .iter()
+    .map(|a| state.account(a).map_or(0, |a| a.balance))
+    .sum();
     assert_eq!(total, supply);
 }
 
@@ -434,8 +524,8 @@ fn fn_dsa_accounts_work_on_the_test_network_only() {
     );
     let first = transfer(&frank, n.bob.address(), ONE_STEIN, 0, true);
     let second = transfer(&frank, n.bob.address(), ONE_STEIN, 1, false);
-    // 121-byte body + option tag + tagged 897-byte key + tagged 666-byte signature.
-    assert_eq!((first.encoded_len(), second.encoded_len()), (1687, 789));
+    // 122-byte body + option tag + tagged 897-byte key + tagged 666-byte signature.
+    assert_eq!((first.encoded_len(), second.encoded_len()), (1688, 790));
     let (b2, rejected) = produce(&mut leader, &n, vec![first.clone(), second]);
     assert!(rejected.is_empty(), "{rejected:?}");
     follower.import_block(&b1).expect("b1");

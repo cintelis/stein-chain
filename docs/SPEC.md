@@ -224,8 +224,10 @@ Related decisions:
 ### 4.4 Fees
 `fee ≥ min_fee_per_byte × encoded_len`. Bytes, not CPU, are the scarce
 resource, so fees are charged per byte, and smaller schemes are cheaper to use.
-Devnet: 10 base units/byte (a 2.5 KB ML-DSA-44 transfer ≈ 0.000025 STEIN). In
-the devnet the whole fee goes to the proposer. [decision: mainnet fee market.
+Devnet: 10 base units/byte (a 2.5 KB ML-DSA-44 transfer ≈ 0.000025 STEIN).
+**Fees go to the fee pool**, a system account, and are paid out to validators by
+voting power every `epoch_blocks` (devnet: 3,600). No transaction credits the
+proposer directly, which keeps transactions shard-local (SHARD-READY I-6). [decision: mainnet fee market.
 Recommended: an EIP-1559-style base fee that is burned, plus a priority tip to
 the proposer]
 
@@ -540,7 +542,7 @@ Cloudflare **does** fit the edges:
 | 1.2 | Follower nodes over HTTPS with PQ TLS; Docker validator plus Cloudflare follower | **done** |
 | 1.3 | FN-DSA test network (experimental, §3.5) | **done** |
 | 2 | Hardening: fuzzing, property tests, RocksDB storage (state on disk), JMT state **keyed by address nibbles**, RPC rate limits, archive offload to R2 | next |
-| 2.1 | Shard-readiness gaps ([SHARD-READY.md](SHARD-READY.md) §5): supply < 2¹²⁷, fee pool, `version` fields, `shard_id: 0` in RPC | before testnet |
+| 2.1 | Shard-readiness gaps ([SHARD-READY.md](SHARD-READY.md) §5): supply < 2¹²⁷, fee pool, `version` fields, `shard_id: 0` in RPC | **done** |
 | 3 | P2P: QUIC + PQ TLS, transaction gossip, **compact block propagation**, RPC-node role | |
 | 4 | Consensus: Malachite + ML-DSA votes, staking, slashing, epochs, checkpoints. **Formal model** of the consensus protocol (Quint/TLA+, model-checked for safety). **Deterministic simulation testing**: the whole network in one process with injected crashes, partitions, delays and Byzantine validators, run millions of times per change | |
 | 1.4 | **steinscan** live explorer; node `GET /events` (server-sent events), `/blocks`, `/mempool`, account history, CORS | **done** |

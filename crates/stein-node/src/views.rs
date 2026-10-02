@@ -76,6 +76,8 @@ impl TxView {
 /// One block, flattened for display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockView {
+    /// Shard. Always 0 until sharding (SHARD-READY I-8).
+    pub shard_id: u16,
     /// Height.
     pub height: u64,
     /// Block hash.
@@ -120,6 +122,7 @@ impl BlockView {
             .iter()
             .fold(0u128, |sum, b| sum.saturating_add(b.fee));
         Self {
+            shard_id: 0,
             height: h.height,
             hash: block.hash(),
             parent: h.parent,

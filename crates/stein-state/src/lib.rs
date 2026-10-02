@@ -45,6 +45,9 @@ pub struct Account {
 /// Why a block was rejected.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BlockError {
+    /// A block format this node does not support.
+    #[error("unsupported block version {0}")]
+    UnsupportedVersion(u8),
     /// Wrong network.
     #[error("wrong chain id")]
     WrongChain,
@@ -336,7 +339,6 @@ impl State {
         overlay: &mut Overlay,
         body: &TxBody,
         attached_key: Option<&PublicKey>,
-        proposer: Address,
     ) -> Result<(), TxError> {
         // Changes are staged in `local` and merged only on success. Sender,
         // recipient and proposer may be the same account; staging through one
@@ -375,7 +377,7 @@ impl State {
 
         // Credits come after the debit is staged, so a transfer to oneself is
         // just a fee payment.
-        for (address, credit) in [(*to, *amount), (proposer, body.fee)] {
+        for (address, credit) in [(*to, *amount), (stein_types::fee_pool(), body.fee)] {
             let mut account = touch(&mut local, address);
             account.balance = account
                 .balance
@@ -384,6 +386,63 @@ impl State {
             local.insert(address, account);
         }
         overlay.extend(local);
+        Ok(())
+    }
+
+    /// At an epoch boundary, pays the fee pool out to the validators in
+    /// proportion to voting power. The rounding remainder stays in the pool.
+    /// Credits only: cannot fail, and every node computes the same split.
+    fn pay_out_epoch(&self, overlay: &mut Overlay, height: Height) -> Result<(), TxError> {
+        let epoch = self.params.epoch_blocks;
+        if epoch == 0 || height.checked_rem(epoch) != Some(0) {
+            return Ok(());
+        }
+        let pool_address = stein_types::fee_pool();
+        let load = |overlay: &Overlay, a: &Address| {
+            overlay
+                .get(a)
+                .or_else(|| self.accounts.get(a))
+                .cloned()
+                .unwrap_or_default()
+        };
+        let mut pool = load(overlay, &pool_address);
+        let total_power: u64 = self
+            .validators
+            .iter()
+            .map(|v| v.power)
+            .fold(0, u64::saturating_add);
+        if pool.balance == 0 || total_power == 0 {
+            return Ok(());
+        }
+        let total = u128::from(total_power);
+        let (Some(per_power), Some(remainder)) = (
+            pool.balance.checked_div(total),
+            pool.balance.checked_rem(total),
+        ) else {
+            return Ok(());
+        };
+        let mut paid: Amount = 0;
+        for v in &self.validators {
+            let power = u128::from(v.power);
+            // (balance / total) * power + (balance % total) * power / total:
+            // exact, and no intermediate exceeds the pool.
+            let share = per_power
+                .checked_mul(power)
+                .and_then(|a| a.checked_add(remainder.checked_mul(power)?.checked_div(total)?))
+                .ok_or(TxError::Overflow)?;
+            let address = v.key.address();
+            let mut account = load(overlay, &address);
+            account.balance = account
+                .balance
+                .checked_add(share)
+                .ok_or(TxError::Overflow)?;
+            overlay.insert(address, account);
+            paid = paid.checked_add(share).ok_or(TxError::Overflow)?;
+        }
+        // Re-read: a validator could in principle be the pool's own address.
+        pool = load(overlay, &pool_address);
+        pool.balance = pool.balance.checked_sub(paid).ok_or(TxError::Overflow)?;
+        overlay.insert(pool_address, pool);
         Ok(())
     }
 
@@ -481,7 +540,7 @@ impl State {
                 rejected.push((tx.id(), TxError::BadSignature));
                 continue;
             }
-            match self.apply(&mut overlay, &tx.body, tx.public_key(), proposer_address) {
+            match self.apply(&mut overlay, &tx.body, tx.public_key()) {
                 Ok(()) => {
                     bodies.push(tx.body);
                     witnesses.push(tx.witness);
@@ -490,9 +549,16 @@ impl State {
             }
         }
 
+        // Cannot fail with supply below 2^127; a failure here would be a bug,
+        // so the block is built without the payout rather than not at all.
+        let mut paid_out = overlay.clone();
+        if self.pay_out_epoch(&mut paid_out, height).is_ok() {
+            overlay = paid_out;
+        }
         self.commit(overlay);
         let state_root = self.compute_root();
         let header = BlockHeader {
+            version: BlockHeader::VERSION,
             chain_id: self.chain_id,
             height,
             parent: self.head,
@@ -527,6 +593,9 @@ impl State {
     /// passes, applies it.
     pub fn import_block(&mut self, block: &Block) -> Result<(), BlockError> {
         let h = &block.header;
+        if h.version != BlockHeader::VERSION {
+            return Err(BlockError::UnsupportedVersion(h.version));
+        }
         let expected = self.height.saturating_add(1);
         if h.chain_id != self.chain_id {
             return Err(BlockError::WrongChain);
@@ -580,8 +649,13 @@ impl State {
 
         let mut overlay = Overlay::new();
         for (i, tx) in txs.iter().enumerate() {
-            self.apply(&mut overlay, &tx.body, tx.public_key(), h.proposer)
+            self.apply(&mut overlay, &tx.body, tx.public_key())
                 .map_err(|e| invalid(i, e))?;
+        }
+        // Exactly as in build_block: leader and followers must agree.
+        let mut paid_out = overlay.clone();
+        if self.pay_out_epoch(&mut paid_out, h.height).is_ok() {
+            overlay = paid_out;
         }
         let undo = self.commit(overlay);
         let root = self.compute_root();
