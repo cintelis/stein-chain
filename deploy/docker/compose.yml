@@ -15,6 +15,11 @@
 #       the separate FN-DSA TEST NETWORK (chain 31338, experimental build) on
 #       http://127.0.0.1:8655: accounts may use fn-dsa-512-draft keys
 #
+#   docker compose -f deploy/docker/compose.yml --profile loadgen up -d loadgen
+#       + steady devnet traffic to A, paid for by the faucet. The validator
+#         only produces a block when transactions are waiting, so without
+#         this an unused devnet stands still.
+#
 # The validator's RPC has no authentication or rate limiting yet: the tunnel
 # is for a devnet only.
 
@@ -49,6 +54,27 @@ services:
       - "127.0.0.1:8646:8645"
     volumes:
       - stein-b:/data
+    restart: unless-stopped
+
+  # Devnet traffic: funds throwaway accounts from the faucet, then sends random
+  # transfers between them. Every start funds a fresh set of accounts.
+  loadgen:
+    profiles: [loadgen]
+    image: stein-node:dev
+    depends_on:
+      stein-a:
+        condition: service_healthy
+    entrypoint: ["stein", "loadgen"]
+    command:
+      - --rpc=http://stein-a:8645
+      - --key=/data/faucet.seed
+      - --tps=${STEIN_LOADGEN_TPS:-3}
+    # The faucet key lives in A's volume; loadgen only reads it.
+    volumes:
+      - stein-a:/data:ro
+    # The image's health check asks a node on this container's own port.
+    healthcheck:
+      disable: true
     restart: unless-stopped
 
   # FN-DSA test network: a separate chain from a separate, experimental image.

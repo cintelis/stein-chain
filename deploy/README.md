@@ -119,6 +119,23 @@ curl -s "$B/status"                                          # role: follower, s
 If B's `/status` shows a `sync_error`, B received data from A that failed
 verification and has stopped following. It never applies such data.
 
+## Devnet traffic
+
+The validator only produces a block when transactions are waiting, so an
+unused devnet stands still and steinscan shows nothing new. `loadgen` keeps
+it moving:
+
+```sh
+docker compose -f deploy/docker/compose.yml --profile loadgen up -d loadgen
+docker compose -f deploy/docker/compose.yml logs -f loadgen
+```
+
+It reads the faucet key from A's volume, gives 20 throwaway accounts 1,000
+STEIN each, and sends 3 transfers a second between them (set
+`STEIN_LOADGEN_TPS` to change the rate). Every start funds a fresh set of
+accounts. Stop it with
+`docker compose -f deploy/docker/compose.yml --profile loadgen stop loadgen`.
+
 ## Local-only alternative
 
 Run both nodes locally, without Cloudflare:
