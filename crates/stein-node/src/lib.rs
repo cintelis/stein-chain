@@ -233,9 +233,15 @@ impl Node {
         let node = Arc::clone(self);
         let checked = tokio::task::spawn_blocking(move || {
             let queued_key = node.mempool.lock().queued_key(&tx.body.sender);
-            node.state
-                .read()
-                .check_transaction(&tx, queued_key.as_ref())
+            let state = node.state.read();
+            // Only the validator judges the balance: a follower's state may
+            // be a block behind the funding the transaction spends.
+            let funded = match node.role {
+                Role::Validator(_) => state.check_funds(&tx),
+                Role::Follower(_) => Ok(()),
+            };
+            funded
+                .and_then(|()| state.check_transaction(&tx, queued_key.as_ref()))
                 .map(|()| tx)
                 .map_err(|e| e.to_string())
         })
@@ -397,6 +403,12 @@ impl Node {
                     tracing::error!(%why, "leader served data that does not verify; following stopped");
                     *self.sync_error.lock() = Some(why);
                     return;
+                }
+                Err(NodeError::Io(e)) => {
+                    // The block is applied to state but not in the log. As in
+                    // the producer: stop, and replay the log on restart.
+                    tracing::error!(%e, "could not persist an imported block; stopping");
+                    std::process::exit(1);
                 }
                 Err(e) => {
                     tracing::warn!(%e, "sync failed; retrying");

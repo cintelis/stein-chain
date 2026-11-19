@@ -271,12 +271,15 @@ async fn raw_blocks(
     AxumState(node): AxumState<Arc<Node>>,
     Query(q): Query<RangeQuery>,
 ) -> Response {
-    let encoded = {
+    // Old blocks are read from disk: keep that off the async workers.
+    let encoded = tokio::task::spawn_blocking(move || {
         let store = node.store.read();
         store
             .range(q.from, q.max.min(SYNC_BATCH), MAX_RANGE_BYTES)
             .and_then(|blocks| borsh::to_vec(&blocks))
-    };
+    })
+    .await
+    .unwrap_or_else(|e| Err(std::io::Error::other(e)));
     match encoded {
         Ok(bytes) => (
             [(axum::http::header::CONTENT_TYPE, "application/octet-stream")],

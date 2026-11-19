@@ -110,6 +110,35 @@ async fn a_transaction_sent_to_the_follower_is_confirmed_on_both_nodes() {
 
     // Nothing new: nothing to apply.
     assert_eq!(b.sync_once().await.expect("sync"), 0);
+
+    // Carol is funded in a block the follower has not synced yet. To the
+    // follower she still holds nothing, but it leaves judging the balance to
+    // the leader, which accepts her spend.
+    let carol = SecretKey::from_seed(Scheme::MlDsa44, &[44; 32]).expect("carol");
+    let transfer = |from: &SecretKey, nonce: u64, register: bool, to: Address, stein: u128| {
+        let body = TxBody {
+            version: TxBody::VERSION,
+            chain_id: 7,
+            sender: from.address(),
+            nonce,
+            fee: ONE_STEIN / 100,
+            expires_at: 50,
+            action: Action::Transfer {
+                to,
+                amount: stein * ONE_STEIN,
+            },
+        };
+        Transaction::sign(body, from, register).expect("sign")
+    };
+    a.submit(transfer(&alice, 2, false, carol.address(), 5))
+        .await
+        .expect("fund carol on the leader");
+    assert_eq!(a.produce_block().expect("produce"), Some(2));
+    assert!(b.state.read().account(&carol.address()).is_none());
+    b.submit(transfer(&carol, 0, true, alice.address(), 1))
+        .await
+        .expect("forwarded although the follower is a block behind");
+    assert_eq!(a.mempool.lock().len(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]

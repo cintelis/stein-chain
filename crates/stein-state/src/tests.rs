@@ -242,6 +242,29 @@ fn replay_and_bad_transactions_are_left_out() {
 }
 
 #[test]
+fn a_transaction_that_does_not_fit_waits_with_its_successors() {
+    let mut n = net();
+    // Room for the key-registering transfer (~3.9 KB) or two plain ones
+    // (~2.5 KB each), never for all three.
+    n.genesis.params.max_block_bytes = 5_500;
+    let mut state = State::from_genesis(&n.genesis).expect("genesis");
+    let txs: Vec<Transaction> = (0..3)
+        .map(|nonce| transfer(&n.alice, n.bob.address(), ONE_STEIN, nonce, nonce == 0))
+        .collect();
+
+    // Nonce 1 does not fit behind nonce 0. It and nonce 2 are left for the
+    // next block, not rejected: a rejection would drop them from the mempool.
+    let (block, rejected) = produce(&mut state, &n, txs.clone());
+    assert_eq!(block.bodies.len(), 1);
+    assert_eq!(rejected, vec![]);
+
+    let (block, rejected) = produce(&mut state, &n, txs[1..].to_vec());
+    assert_eq!(block.bodies.len(), 2);
+    assert_eq!(rejected, vec![]);
+    assert_eq!(state.account(&n.alice.address()).expect("alice").nonce, 3);
+}
+
+#[test]
 fn a_forged_signature_is_left_out_by_the_leader() {
     let n = net();
     let mut state = State::from_genesis(&n.genesis).expect("genesis");

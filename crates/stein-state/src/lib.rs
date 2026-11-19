@@ -12,7 +12,7 @@
 
 mod cache;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 pub use cache::{SigCache, TwoGen};
@@ -294,8 +294,7 @@ impl State {
     }
 
     /// Full validation of one transaction against current state, signature
-    /// included: the nonce is not spent, and the balance covers amount plus
-    /// fee. For mempool admission. `queued_key` is the key carried by
+    /// included. For mempool admission. `queued_key` is the key carried by
     /// the sender's queued, not yet included, first transaction: it lets a
     /// wallet send several transactions before the first lands in a block.
     pub fn check_transaction(
@@ -327,18 +326,25 @@ impl State {
                 got: tx.body.nonce,
             });
         }
-        // The sender must be able to pay for this transaction on its own, or
-        // accounts holding nothing could fill the mempool for free. What the
-        // sender's other queued transactions spend is settled at execution.
-        let Action::Transfer { amount, .. } = &tx.body.action;
-        let debit = amount.checked_add(tx.body.fee).ok_or(TxError::Overflow)?;
-        if account.balance < debit {
-            return Err(TxError::InsufficientBalance);
-        }
         match self.verify_signatures(&[(tx, &key)]).as_slice() {
             [true] => Ok(()),
             _ => Err(TxError::BadSignature),
         }
+    }
+
+    /// Whether the sender's current balance covers `tx` on its own: amount
+    /// plus fee. For mempool admission on the node that builds blocks, so
+    /// accounts holding nothing cannot fill the pool for free. What the
+    /// sender's other queued transactions spend is settled at execution.
+    /// Cheap; run it before [`State::check_transaction`].
+    pub fn check_funds(&self, tx: &Transaction) -> Result<(), TxError> {
+        let Action::Transfer { amount, .. } = &tx.body.action;
+        let debit = amount.checked_add(tx.body.fee).ok_or(TxError::Overflow)?;
+        let balance = self.accounts.get(&tx.body.sender).map_or(0, |a| a.balance);
+        if balance < debit {
+            return Err(TxError::InsufficientBalance);
+        }
+        Ok(())
     }
 
     /// Executes `body` on top of `overlay` (falling back to committed state).
@@ -509,12 +515,19 @@ impl State {
         let mut pending: HashMap<Address, VerifyingKey> = HashMap::new();
         let mut staged: Vec<(Transaction, VerifyingKey)> = Vec::new();
         let (mut count, mut bytes) = (0u32, 0u64);
+        // Senders with a transaction that did not fit. Their later nonces
+        // wait with it for the next block; they are not rejected.
+        let mut deferred: HashSet<Address> = HashSet::new();
         for tx in candidates {
             if count >= self.params.max_block_txs {
                 break;
             }
+            if deferred.contains(&tx.body.sender) {
+                continue;
+            }
             let size = tx.encoded_len();
             if bytes.saturating_add(size) > self.params.max_block_bytes {
+                deferred.insert(tx.body.sender);
                 continue;
             }
             let checked = tx

@@ -179,6 +179,8 @@ impl Store {
         let mut out = Vec::new();
         let mut bytes = 0usize;
         let mut height = from;
+        // One read handle for the whole range, opened only if needed.
+        let mut log: Option<File> = None;
         while (out.len() as u64) < max {
             let Some(held) = self.block(height) else {
                 break;
@@ -186,10 +188,15 @@ impl Store {
             let block = if held.witnesses.is_some() {
                 Cow::Borrowed(held)
             } else {
-                match self.persisted(height)? {
+                let file = match &mut log {
+                    Some(file) => file,
+                    None => log.insert(File::open(&self.path)?),
+                };
+                // Never serve a block without witnesses: a follower would
+                // have to refuse it, and stop following. An error is retried.
+                match self.persisted(file, height)? {
                     Some(full) if full.header == held.header => Cow::Owned(full),
-                    Some(_) => return Err(ErrorKind::InvalidData.into()),
-                    None => Cow::Borrowed(held),
+                    _ => return Err(ErrorKind::InvalidData.into()),
                 }
             };
             let size = borsh::object_length(block.as_ref()).unwrap_or(usize::MAX);
@@ -204,15 +211,14 @@ impl Store {
     }
 
     /// The block at `height` as it was persisted, witnesses included, read
-    /// back from the log. `None` if the log holds no such block.
-    fn persisted(&self, height: Height) -> std::io::Result<Option<Block>> {
+    /// back from the log through `file`. `None` if the log holds no such block.
+    fn persisted(&self, file: &mut File, height: Height) -> std::io::Result<Option<Block>> {
         let record = height
             .checked_sub(1)
             .and_then(|i| self.records.get(usize::try_from(i).ok()?));
         let Some(&(offset, len)) = record else {
             return Ok(None);
         };
-        let mut file = File::open(&self.path)?;
         file.seek(SeekFrom::Start(offset))?;
         let mut bytes = vec![0u8; len as usize];
         file.read_exact(&mut bytes)?;
