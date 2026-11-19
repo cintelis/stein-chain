@@ -68,7 +68,7 @@ services:
     command:
       - --rpc=http://stein-a:8645
       - --key=/data/faucet.seed
-      - --tps=${STEIN_LOADGEN_TPS:-3}
+      - --tps=${STEIN_LOADGEN_TPS:-0.00333}
     # The faucet key lives in A's volume; loadgen only reads it.
     volumes:
       - stein-a:/data:ro

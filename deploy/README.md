@@ -131,7 +131,7 @@ docker compose -f deploy/docker/compose.yml logs -f loadgen
 ```
 
 It reads the faucet key from A's volume, gives 20 throwaway accounts 1,000
-STEIN each, and sends 3 transfers a second between them (set
+STEIN each, and sends one transfer every 5 minutes between them (set
 `STEIN_LOADGEN_TPS` to change the rate). Every start funds a fresh set of
 accounts. Stop it with
 `docker compose -f deploy/docker/compose.yml --profile loadgen stop loadgen`.
