@@ -11,9 +11,21 @@ use stein_types::{
 };
 
 fn setup(dir: &Path) -> SecretKey {
+    setup_with(dir, &[])
+}
+
+/// A devnet whose genesis lists this node's validator and `others`.
+fn setup_with(dir: &Path, others: &[&SecretKey]) -> SecretKey {
     let validator =
         create_seed_file(&dir.join(files::VALIDATOR_SEED), Scheme::MlDsa44).expect("validator");
     let alice = SecretKey::from_seed(Scheme::MlDsa44, &[42; 32]).expect("alice");
+    let validators = std::iter::once(&validator)
+        .chain(others.iter().copied())
+        .map(|key| GenesisValidator {
+            public_key: key.public_key().clone(),
+            power: 1,
+        })
+        .collect();
     let genesis = Genesis {
         chain_id: 9,
         genesis_time_ms: 1,
@@ -22,10 +34,7 @@ fn setup(dir: &Path) -> SecretKey {
             address: alice.address(),
             amount: 100 * ONE_STEIN,
         }],
-        validators: vec![GenesisValidator {
-            public_key: validator.public_key().clone(),
-            power: 1,
-        }],
+        validators,
     };
     std::fs::write(
         dir.join(files::GENESIS),
@@ -36,6 +45,10 @@ fn setup(dir: &Path) -> SecretKey {
 }
 
 fn pay(alice: &SecretKey, nonce: u64) -> Transaction {
+    pay_with(alice, nonce, nonce == 0)
+}
+
+fn pay_with(alice: &SecretKey, nonce: u64, register: bool) -> Transaction {
     let body = TxBody {
         version: TxBody::VERSION,
         chain_id: 9,
@@ -48,7 +61,67 @@ fn pay(alice: &SecretKey, nonce: u64) -> Transaction {
             amount: ONE_STEIN,
         },
     };
-    Transaction::sign(body, alice, nonce == 0).expect("sign")
+    Transaction::sign(body, alice, register).expect("sign")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn transactions_that_could_never_be_included_are_not_queued() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let alice = setup(dir.path());
+    let node = Node::open(dir.path()).expect("open");
+
+    // A validly signed transaction from an account that holds nothing.
+    let nobody = SecretKey::from_seed(Scheme::MlDsa44, &[77; 32]).expect("key");
+    let error = node.submit(pay(&nobody, 0)).await.expect_err("unfunded");
+    assert!(error.contains("insufficient balance"), "{error}");
+
+    // A funded account, but a nonce that leaves a gap: with the key attached
+    // it verifies, yet no block could include it before nonce 0.
+    let error = node
+        .submit(pay_with(&alice, 1, true))
+        .await
+        .expect_err("gap");
+    assert!(error.contains("leaves a gap"), "{error}");
+    node.submit(pay(&alice, 0)).await.expect("nonce 0");
+    let error = node.submit(pay(&alice, 2)).await.expect_err("gap");
+    assert!(error.contains("leaves a gap"), "{error}");
+    node.submit(pay(&alice, 1)).await.expect("nonce 1");
+    node.submit(pay(&alice, 2)).await.expect("nonce 2");
+
+    assert_eq!(node.mempool.lock().len(), 3);
+    assert_eq!(node.produce_block().expect("produce"), Some(1));
+    assert!(node.mempool.lock().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_validator_produces_only_at_the_heights_it_is_scheduled_for() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let other = SecretKey::from_seed(Scheme::MlDsa44, &[43; 32]).expect("other");
+    let alice = setup_with(dir.path(), &[&other]);
+    let me = stein_crypto::secret_key_from_seed_file(&dir.path().join(files::VALIDATOR_SEED))
+        .expect("seed")
+        .address();
+
+    let node = Node::open(dir.path()).expect("open");
+    // Which of the two proposes first depends on their addresses.
+    let first = node.state.read().proposer_for(1).key.address() == me;
+    node.submit(pay(&alice, 0)).await.expect("submit");
+    assert_eq!(
+        node.produce_block().expect("produce"),
+        first.then_some(1),
+        "produces height 1 only if scheduled for it"
+    );
+    // Either way the next height is now the other validator's.
+    if first {
+        node.submit(pay(&alice, 1)).await.expect("submit");
+    }
+    assert_eq!(node.produce_block().expect("produce"), None);
+    assert_eq!(node.state.read().height(), u64::from(first));
+    drop(node);
+
+    // Nothing it wrote is refused when it replays its own log.
+    let reopened = Node::open(dir.path()).expect("reopen");
+    assert_eq!(reopened.state.read().height(), u64::from(first));
 }
 
 #[tokio::test(flavor = "multi_thread")]

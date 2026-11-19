@@ -1,14 +1,16 @@
 //! Block storage: an append-only, fsynced log on disk plus an in-memory index.
 //!
 //! The log keeps full blocks (witnesses included) so a restarted node can
-//! re-verify its own history. Memory keeps witnesses only for the retention
-//! window. Production nodes replace this with RocksDB column families split
-//! into bodies and witnesses (SPEC §5.5).
+//! re-verify its own history, and so a follower can sync blocks older than
+//! the retention window: those are read back from the log. Memory keeps
+//! witnesses only for the retention window. Production nodes replace this
+//! with RocksDB column families split into bodies and witnesses (SPEC §5.5).
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, ErrorKind, Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use stein_crypto::{Address, Hash};
 use stein_types::{Action, Block, Height};
@@ -24,7 +26,14 @@ pub struct TxLocation {
 
 /// Blocks by height, plus the log they are persisted to.
 pub struct Store {
+    path: PathBuf,
     log: File,
+    /// Where each block's encoding sits in the log: (offset, length), by
+    /// height. Filled from the log at open and extended by every persisted
+    /// append, so it lines up with `blocks` once the caller has replayed.
+    records: Vec<(u64, u32)>,
+    /// Length of the valid log: where the next record is written.
+    log_len: u64,
     blocks: Vec<Block>,
     tx_index: HashMap<Hash, TxLocation>,
     /// Transactions touching each address (as sender or recipient), oldest
@@ -46,6 +55,7 @@ impl Store {
     /// The caller re-verifies them by importing them into state.
     pub fn open(path: &Path, retention: u64) -> std::io::Result<(Self, Vec<Block>)> {
         let mut recovered = Vec::new();
+        let mut records = Vec::new();
         let mut valid_len = 0u64;
         if path.exists() {
             let mut reader = BufReader::new(File::open(path)?);
@@ -68,21 +78,24 @@ impl Store {
                     Ok(block) => recovered.push(block),
                     Err(_) => break,
                 }
+                records.push((valid_len.saturating_add(4), len));
                 valid_len = valid_len.saturating_add(4).saturating_add(u64::from(len));
             }
         }
         // Not opened in append mode: on Windows an append-only handle cannot
-        // truncate. Cut any torn tail, then write from the end.
-        let mut log = OpenOptions::new()
+        // truncate. Cut any torn tail; appends then write at `log_len`.
+        let log = OpenOptions::new()
             .create(true)
             .truncate(false)
             .write(true)
             .open(path)?;
         log.set_len(valid_len)?;
-        log.seek(SeekFrom::End(0))?;
         Ok((
             Self {
+                path: path.to_path_buf(),
                 log,
+                records,
+                log_len: valid_len,
                 blocks: Vec::new(),
                 tx_index: HashMap::new(),
                 by_address: HashMap::new(),
@@ -95,14 +108,23 @@ impl Store {
     }
 
     /// Persists `block` (fsync) and indexes it. Call only after the block has
-    /// been fully validated and applied.
+    /// been fully validated and applied. `persist` is false only for the
+    /// blocks [`Store::open`] returned, in order: they are in the log already.
     pub fn append(&mut self, block: Block, persist: bool) -> std::io::Result<()> {
         if persist {
             let bytes = borsh::to_vec(&block)?;
             let len = u32::try_from(bytes.len()).map_err(|_| ErrorKind::InvalidData)?;
+            // Always at the end of the valid log, so a write that failed
+            // part-way is overwritten rather than left in the middle.
+            self.log.seek(SeekFrom::Start(self.log_len))?;
             self.log.write_all(&len.to_le_bytes())?;
             self.log.write_all(&bytes)?;
             self.log.sync_data()?;
+            self.records.push((self.log_len.saturating_add(4), len));
+            self.log_len = self
+                .log_len
+                .saturating_add(4)
+                .saturating_add(u64::from(len));
         }
         let height = block.header.height;
         self.by_proposer
@@ -145,16 +167,32 @@ impl Store {
     }
 
     /// Up to `max` consecutive blocks from `from`, capped at about `max_bytes`
-    /// of encoding (always at least one block if `from` exists).
-    pub fn range(&self, from: Height, max: u64, max_bytes: usize) -> Vec<&Block> {
+    /// of encoding (always at least one block if `from` exists). Blocks whose
+    /// witnesses were pruned from memory come from the log with their
+    /// witnesses: a syncing node must verify every signature, however old.
+    pub fn range(
+        &self,
+        from: Height,
+        max: u64,
+        max_bytes: usize,
+    ) -> std::io::Result<Vec<Cow<'_, Block>>> {
         let mut out = Vec::new();
         let mut bytes = 0usize;
         let mut height = from;
         while (out.len() as u64) < max {
-            let Some(block) = self.block(height) else {
+            let Some(held) = self.block(height) else {
                 break;
             };
-            let size = borsh::object_length(block).unwrap_or(usize::MAX);
+            let block = if held.witnesses.is_some() {
+                Cow::Borrowed(held)
+            } else {
+                match self.persisted(height)? {
+                    Some(full) if full.header == held.header => Cow::Owned(full),
+                    Some(_) => return Err(ErrorKind::InvalidData.into()),
+                    None => Cow::Borrowed(held),
+                }
+            };
+            let size = borsh::object_length(block.as_ref()).unwrap_or(usize::MAX);
             if !out.is_empty() && bytes.saturating_add(size) > max_bytes {
                 break;
             }
@@ -162,7 +200,23 @@ impl Store {
             out.push(block);
             height = height.saturating_add(1);
         }
-        out
+        Ok(out)
+    }
+
+    /// The block at `height` as it was persisted, witnesses included, read
+    /// back from the log. `None` if the log holds no such block.
+    fn persisted(&self, height: Height) -> std::io::Result<Option<Block>> {
+        let record = height
+            .checked_sub(1)
+            .and_then(|i| self.records.get(usize::try_from(i).ok()?));
+        let Some(&(offset, len)) = record else {
+            return Ok(None);
+        };
+        let mut file = File::open(&self.path)?;
+        file.seek(SeekFrom::Start(offset))?;
+        let mut bytes = vec![0u8; len as usize];
+        file.read_exact(&mut bytes)?;
+        borsh::from_slice(&bytes).map(Some)
     }
 
     /// Transactions in all blocks held.

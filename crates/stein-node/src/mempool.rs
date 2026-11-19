@@ -34,6 +34,16 @@ pub enum AdmitError {
     /// Another transaction with this sender and nonce is queued.
     #[error("nonce already used by a queued transaction")]
     NonceTaken,
+    /// The nonce does not directly follow the sender's account nonce and
+    /// queued transactions. A transaction behind a gap could never be
+    /// included, only occupy the pool.
+    #[error("nonce {got} leaves a gap: the sender's next nonce is {expected}")]
+    NonceGap {
+        /// The nonce that would be accepted.
+        expected: u64,
+        /// The transaction's.
+        got: u64,
+    },
     /// Mempool or sender queue is full.
     #[error("mempool full")]
     Full,
@@ -95,8 +105,11 @@ impl Mempool {
             .find_map(|tx| tx.public_key().cloned())
     }
 
-    /// Queues an already-verified transaction.
-    pub fn admit(&mut self, tx: Transaction) -> Result<Hash, AdmitError> {
+    /// Queues an already-verified transaction. `account_nonce` is the
+    /// sender's next nonce in current state: the transaction must directly
+    /// follow it and whatever the sender already has queued, so every queue
+    /// is a run of consecutive nonces that a block can include.
+    pub fn admit(&mut self, tx: Transaction, account_nonce: u64) -> Result<Hash, AdmitError> {
         let id = tx.id();
         if self.ids.contains(&id) {
             return Err(AdmitError::Duplicate);
@@ -104,14 +117,23 @@ impl Mempool {
         if self.ids.len() >= self.limits.max_total {
             return Err(AdmitError::Full);
         }
-        let queue = self.by_sender.entry(tx.body.sender).or_default();
-        if queue.contains_key(&tx.body.nonce) {
+        let (sender, nonce) = (tx.body.sender, tx.body.nonce);
+        let queue = self.by_sender.get(&sender);
+        if queue.is_some_and(|q| q.contains_key(&nonce)) {
             return Err(AdmitError::NonceTaken);
         }
-        if queue.len() >= self.limits.max_per_sender {
+        let queued = queue.map_or(0, |q| q.range(account_nonce..).count());
+        let expected = account_nonce.saturating_add(queued as u64);
+        if nonce != expected {
+            return Err(AdmitError::NonceGap {
+                expected,
+                got: nonce,
+            });
+        }
+        if queue.map_or(0, BTreeMap::len) >= self.limits.max_per_sender {
             return Err(AdmitError::Full);
         }
-        queue.insert(tx.body.nonce, tx);
+        self.by_sender.entry(sender).or_default().insert(nonce, tx);
         self.ids.insert(id);
         Ok(id)
     }
@@ -137,18 +159,23 @@ impl Mempool {
     }
 
     /// Drops what can never be included any more: transactions whose nonce is
-    /// spent, expired ones, and the explicitly `rejected`.
+    /// spent, expired ones, the explicitly `rejected`, and everything queued
+    /// behind one of those, since a gap in the nonces cannot be crossed.
     pub fn prune(&mut self, state: &State, rejected: &[Hash]) {
         let rejected: HashSet<&Hash> = rejected.iter().collect();
         let height = state.height().saturating_add(1);
         let ids = &mut self.ids;
         self.by_sender.retain(|sender, queue| {
-            let next = state.account(sender).map_or(0, |a| a.nonce);
+            let mut next = state.account(sender).map_or(0, |a| a.nonce);
+            // Visited in nonce order: once one is dropped, none after it
+            // matches `next` again.
             queue.retain(|nonce, tx| {
                 let id = tx.id();
                 let keep =
-                    *nonce >= next && tx.body.expires_at >= height && !rejected.contains(&id);
-                if !keep {
+                    *nonce == next && tx.body.expires_at >= height && !rejected.contains(&id);
+                if keep {
+                    next = next.saturating_add(1);
+                } else {
                     ids.remove(&id);
                 }
                 keep

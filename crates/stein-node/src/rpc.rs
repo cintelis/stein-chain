@@ -264,15 +264,18 @@ fn default_max() -> u64 {
 /// Most bytes of blocks served per request.
 const MAX_RANGE_BYTES: usize = 32 * 1024 * 1024;
 
-/// `GET /raw/blocks?from=H&max=N`: Borsh `Vec<Block>`, witnesses included
-/// while retained. What followers sync from.
+/// `GET /raw/blocks?from=H&max=N`: Borsh `Vec<Block>`, witnesses always
+/// included (read from the block log once pruned from memory). What followers
+/// sync from.
 async fn raw_blocks(
     AxumState(node): AxumState<Arc<Node>>,
     Query(q): Query<RangeQuery>,
 ) -> Response {
     let encoded = {
         let store = node.store.read();
-        borsh::to_vec(&store.range(q.from, q.max.min(SYNC_BATCH), MAX_RANGE_BYTES))
+        store
+            .range(q.from, q.max.min(SYNC_BATCH), MAX_RANGE_BYTES)
+            .and_then(|blocks| borsh::to_vec(&blocks))
     };
     match encoded {
         Ok(bytes) => (

@@ -301,7 +301,9 @@ Tests: `a_warm_signature_cache_never_vouches_for_different_bytes` and
 ### 5.5 Storage, witness retention and archive offload
 - [built] An append-only, fsynced block log. On restart the node **re-verifies
   every block** from genesis; a tampered log is refused. In memory, witnesses
-  are pruned after `witness_retention_blocks`.
+  are pruned after `witness_retention_blocks`. A follower syncing older blocks
+  is served them from the log, witnesses included, so a new node can still
+  verify the whole history.
 - [planned] RocksDB with separate column families for headers, bodies,
   witnesses and state. Account state moves to disk, with only hot accounts in
   RAM.
@@ -336,7 +338,7 @@ Tests: `a_warm_signature_cache_never_vouches_for_different_bytes` and
   aggregated like BLS. Vote traffic: two rounds × 100 × 2.4 KB ≈ 480 KB per
   block with ML-DSA-44, or ≈ 660 KB with ML-DSA-65.
 - **Proposer selection:** stake-weighted round robin. [built: unweighted round
-  robin]
+  robin; a validator produces only at the heights it is scheduled for]
 - **Epochs:** validator-set changes take effect at epoch boundaries
   (devnet proposal: 1 hour).
 - **Slashing:** double-signing (two conflicting signed votes or proposals) is
@@ -417,6 +419,9 @@ These are placeholders. The project owner should set them, with legal advice.
    overwritten) with mode 0600 on Unix, and the seed is zeroized after use.
 7. **[built]** Bounded mempool (100k total, 64 per sender), bounded key and
    signature caches; RPC body limit 64 KB; RPC binds to localhost by default.
+   Admission requires that the sender's balance covers the transaction and
+   that its nonce directly follows the account's and its queued ones, so
+   nothing that could never be included occupies the pool.
 8. **[planned]** RPC rate limiting per IP, since each submission costs a
    ~100 µs signature verification before any fee is paid. Public RPC goes
    behind a proxy/CDN, on RPC nodes, never on the validator core.

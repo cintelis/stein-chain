@@ -189,6 +189,14 @@ impl Node {
                 "validator key is not in the genesis validator set".into(),
             ));
         }
+        if matches!(role, Role::Validator(_)) && state.validators().len() > 1 {
+            tracing::warn!(
+                validators = state.validators().len(),
+                "genesis has several validators, but validators do not exchange blocks \
+                 until consensus is built (SPEC §6): this node produces only at the \
+                 heights it is scheduled for, and the chain stops at the first other"
+            );
+        }
 
         let retention = genesis.params.witness_retention_blocks;
         let (mut store, recovered) = Store::open(&data_dir.join(files::BLOCK_LOG), retention)?;
@@ -236,22 +244,27 @@ impl Node {
 
         let view = views::TxView::pending(&checked);
         let id = match &self.role {
-            Role::Validator(_) => self
-                .mempool
-                .lock()
-                .admit(checked)
-                .map_err(|e| e.to_string())?,
+            Role::Validator(_) => self.admit(checked).map_err(|e| e.to_string())?,
             Role::Follower(leader) => {
                 let id = leader.forward(&checked).await?;
                 // Remembered locally (never produced from), so a follow-up from
                 // a new account verifies against the key its queued first
                 // transaction registers. Pruned as blocks arrive.
-                let _ = self.mempool.lock().admit(checked);
+                let _ = self.admit(checked);
                 id
             }
         };
         let _ = self.events.send(views::Event::Pending(view));
         Ok(id)
+    }
+
+    /// Queues a verified transaction directly behind the sender's account
+    /// nonce and queued transactions.
+    fn admit(&self, tx: Transaction) -> Result<Hash, mempool::AdmitError> {
+        // State, then mempool: the order every path takes these locks in.
+        let state = self.state.read();
+        let account_nonce = state.account(&tx.body.sender).map_or(0, |a| a.nonce);
+        self.mempool.lock().admit(tx, account_nonce)
     }
 
     /// The event for `block`, if anyone is listening. Sent only after the
@@ -261,14 +274,24 @@ impl Node {
         (self.events.receiver_count() > 0).then(|| views::Event::Block(views::BlockView::of(block)))
     }
 
-    /// Builds, persists and indexes one block if there is anything to include.
+    /// Builds, persists and indexes one block if there is anything to include
+    /// and this validator is the one scheduled for the next height.
     /// Validators only.
     pub fn produce_block(&self) -> Result<Option<u64>, NodeError> {
         let Role::Validator(key) = &self.role else {
             return Err(NodeError::Key("a follower does not produce blocks".into()));
         };
-        let max = self.state.read().params().max_block_txs as usize;
-        let candidates = self.mempool.lock().candidates(&self.state.read(), max);
+        let candidates = {
+            let state = self.state.read();
+            // Every other node, and this one when it replays its log, refuses
+            // a block from a validator that is not scheduled for its height.
+            let next = state.height().saturating_add(1);
+            if state.proposer_for(next).key.address() != key.address() {
+                return Ok(None);
+            }
+            let max = state.params().max_block_txs as usize;
+            self.mempool.lock().candidates(&state, max)
+        };
         if candidates.is_empty() {
             return Ok(None);
         }
@@ -355,7 +378,8 @@ impl Node {
                 applied = applied.saturating_add(1);
                 tracing::info!(height, "imported and verified block");
             }
-            node.mempool.lock().prune(&node.state.read(), &[]);
+            let state = node.state.read();
+            node.mempool.lock().prune(&state, &[]);
             Ok(applied)
         })
         .await

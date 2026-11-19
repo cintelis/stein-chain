@@ -13,13 +13,17 @@ use stein_types::{
 };
 
 fn setup_validator(dir: &Path, chain_id: u64) -> (SecretKey, Genesis) {
+    setup_validator_with(dir, chain_id, ChainParams::default())
+}
+
+fn setup_validator_with(dir: &Path, chain_id: u64, params: ChainParams) -> (SecretKey, Genesis) {
     let validator =
         create_seed_file(&dir.join(files::VALIDATOR_SEED), Scheme::MlDsa44).expect("validator");
     let alice = SecretKey::from_seed(Scheme::MlDsa44, &[42; 32]).expect("alice");
     let genesis = Genesis {
         chain_id,
         genesis_time_ms: 1,
-        params: ChainParams::default(),
+        params,
         allocations: vec![Allocation {
             address: alice.address(),
             amount: 100 * ONE_STEIN,
@@ -106,6 +110,50 @@ async fn a_transaction_sent_to_the_follower_is_confirmed_on_both_nodes() {
 
     // Nothing new: nothing to apply.
     assert_eq!(b.sync_once().await.expect("sync"), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_follower_syncs_blocks_older_than_the_witness_retention() {
+    let (a_dir, b_dir) = (
+        tempfile::tempdir().expect("a"),
+        tempfile::tempdir().expect("b"),
+    );
+    let params = ChainParams {
+        witness_retention_blocks: 2,
+        ..ChainParams::default()
+    };
+    let (alice, genesis) = setup_validator_with(a_dir.path(), 7, params);
+
+    // Five blocks, a restart, then a sixth: the leader's memory has pruned
+    // the witnesses of the oldest, both those replayed and those appended.
+    let a = Node::open(a_dir.path()).expect("validator");
+    for nonce in 0..5 {
+        a.submit(pay(&alice, 7, nonce)).await.expect("submit");
+        a.produce_block().expect("produce");
+    }
+    drop(a);
+    let a = Node::open(a_dir.path()).expect("validator restarts");
+    a.submit(pay(&alice, 7, 5)).await.expect("submit");
+    assert_eq!(a.produce_block().expect("produce"), Some(6));
+    assert!(
+        a.store
+            .read()
+            .block(1)
+            .expect("block 1")
+            .witnesses
+            .is_none(),
+        "pruned from memory"
+    );
+
+    // A follower starting from nothing still gets every witness, from the
+    // leader's log, and verifies the whole history.
+    let url = serve(Arc::clone(&a)).await;
+    let b = Node::open_follower(b_dir.path(), &url, genesis.hash())
+        .await
+        .expect("follower");
+    assert_eq!(b.sync_once().await.expect("sync"), 6);
+    assert_eq!(b.state.read().head(), a.state.read().head());
+    assert_eq!(b.state.read().state_root(), a.state.read().state_root());
 }
 
 #[tokio::test(flavor = "multi_thread")]

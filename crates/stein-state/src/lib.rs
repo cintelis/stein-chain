@@ -294,7 +294,8 @@ impl State {
     }
 
     /// Full validation of one transaction against current state, signature
-    /// included. For mempool admission. `queued_key` is the key carried by
+    /// included: the nonce is not spent, and the balance covers amount plus
+    /// fee. For mempool admission. `queued_key` is the key carried by
     /// the sender's queued, not yet included, first transaction: it lets a
     /// wallet send several transactions before the first lands in a block.
     pub fn check_transaction(
@@ -325,6 +326,14 @@ impl State {
                 expected: account.nonce,
                 got: tx.body.nonce,
             });
+        }
+        // The sender must be able to pay for this transaction on its own, or
+        // accounts holding nothing could fill the mempool for free. What the
+        // sender's other queued transactions spend is settled at execution.
+        let Action::Transfer { amount, .. } = &tx.body.action;
+        let debit = amount.checked_add(tx.body.fee).ok_or(TxError::Overflow)?;
+        if account.balance < debit {
+            return Err(TxError::InsufficientBalance);
         }
         match self.verify_signatures(&[(tx, &key)]).as_slice() {
             [true] => Ok(()),
