@@ -86,6 +86,8 @@ a:hover { color: var(--primary); text-decoration: underline; }
 .menu > a, .drop-btn { color: var(--text); font: inherit; font-weight: 500; }
 .menu > a:hover, .drop-btn:hover { color: var(--primary); text-decoration: none; }
 .drop-btn { background: none; border: 0; padding: 0; cursor: pointer; }
+.menu > a.gh { display: grid; place-items: center; }
+.menu > a.gh svg { display: block; }
 .dropdown { position: relative; }
 .drop-menu { display: none; position: absolute; right: 0; top: 100%; padding: 8px; min-width: 210px; background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--primary); border-radius: 0 0 10px 10px; box-shadow: var(--shadow); }
 .dropdown:hover .drop-menu, .dropdown:focus-within .drop-menu { display: block; }
