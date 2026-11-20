@@ -1,5 +1,6 @@
 //! `stein loadgen`: devnet traffic. Creates throwaway accounts in memory
-//! (spread over the schemes the network accepts), funds them from a key file, then sends
+//! (FN-DSA-512 where the network accepts it, the default for account keys;
+//! otherwise ML-DSA), funds them from a key file, then sends
 //! random transfers between them at a steady rate until stopped.
 //!
 //! Keys exist only in this process: when it exits, whatever the accounts hold
@@ -143,11 +144,16 @@ pub async fn run(rpc: &str, client: reqwest::Client, opts: Options) -> Result<()
         format_amount(opts.fund)
     );
 
-    // Accounts take turns over the schemes the network accepts, FN-DSA first.
-    let schemes: Vec<Scheme> = [Scheme::FnDsa512Draft, Scheme::MlDsa44, Scheme::MlDsa65]
-        .into_iter()
-        .filter(|s| status.tx_schemes.contains(s))
-        .collect();
+    // Every account on FN-DSA-512, the default for account keys. On a
+    // network without it, accounts take turns over the ML-DSA schemes.
+    let schemes: Vec<Scheme> = if status.tx_schemes.contains(&Scheme::FnDsa512Draft) {
+        vec![Scheme::FnDsa512Draft]
+    } else {
+        [Scheme::MlDsa44, Scheme::MlDsa65]
+            .into_iter()
+            .filter(|s| status.tx_schemes.contains(s))
+            .collect()
+    };
     if schemes.is_empty() {
         return Err("the network accepts no scheme this wallet knows".into());
     }

@@ -74,8 +74,8 @@ enum Command {
         /// Key that funds the accounts, e.g. the devnet faucet.
         #[arg(long)]
         key: PathBuf,
-        /// Number of accounts, spread evenly over the schemes the network
-        /// accepts.
+        /// Number of accounts. All use FN-DSA-512 where the network accepts
+        /// it, otherwise ML-DSA.
         #[arg(long, default_value_t = 20)]
         accounts: usize,
         /// Transfers per second.
