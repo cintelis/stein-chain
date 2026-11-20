@@ -74,3 +74,9 @@ jobs:
           curl -fsS "$SITE/inbox.js?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT" | cmp -s - public/inbox.js
           code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "origin: $SITE" -H 'content-type: application/json' --data '{"id":"none","proof":"none"}' "$SITE/api/inbox/open")
           [ "$code" = 403 ] || { echo "POST /api/inbox/open answered $code, expected 403" >&2; exit 1; }
+          # The wallet core is the vendored one, and registration takes no
+          # one's word: a key and signature of zeros prove nothing.
+          curl -fsS "$SITE/stein_wallet_core.wasm?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT" | cmp -s - vendor/stein-wallet-core/stein_wallet_core.wasm
+          zeros() { head -c "$1" /dev/zero | base64 -w0; }
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "origin: $SITE" -H 'content-type: application/json' --data "{\"public_key\":\"$(zeros 897)\",\"signature\":\"$(zeros 666)\"}" "$SITE/api/register")
+          [ "$code" = 403 ] || { echo "POST /api/register answered $code, expected 403" >&2; exit 1; }

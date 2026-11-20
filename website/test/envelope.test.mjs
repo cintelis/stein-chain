@@ -1,17 +1,25 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
 import { generateKeyPair, open, seal } from "../src/envelope.js";
 import { ENVELOPE_BYTES, MAX_TEXT_BYTES, PUBLIC_KEY_BYTES } from "../src/format.js";
 import { proofOf } from "../src/proof.js";
+import { askUrl, messageSigner, registrationAddress, splitAnswer, toBase64Url } from "../src/statement.js";
+import { loadCore } from "../vendor/stein-wallet-core/core.mjs";
+
+const core = await loadCore(
+  readFileSync(new URL("../vendor/stein-wallet-core/stein_wallet_core.wasm", import.meta.url)),
+);
+const walletSeed = (byte) => new Uint8Array(32).fill(byte);
 
 test("a sealed message opens with the secret key, and only with it", async () => {
   const [publicKey, secretKey] = await generateKeyPair();
   const [, otherSecret] = await generateKeyPair();
   const text = "Hello from nobody in particular. ✓";
   const envelope = await seal(publicKey, text);
-  assert.equal(await open(secretKey, envelope), text);
+  assert.deepEqual(await open(secretKey, envelope), { text, signed: null });
   await assert.rejects(open(otherSecret, envelope));
 });
 
@@ -21,7 +29,7 @@ test("every envelope has the same size, whatever the text", async () => {
   for (const text of ["a", "two words", long]) {
     const envelope = await seal(publicKey, text);
     assert.equal(envelope.length, ENVELOPE_BYTES);
-    assert.equal(await open(secretKey, envelope), text);
+    assert.equal((await open(secretKey, envelope)).text, text);
   }
 });
 
@@ -77,4 +85,64 @@ test("ML-KEM-768 agrees with Node's implementation", async (t) => {
   const { cipherText: ciphertext, sharedSecret: shared } = ml_kem768.encapsulate(publicKey);
   const theirs = crypto.decapsulate(pair.privateKey, ciphertext);
   assert.deepEqual(new Uint8Array(theirs), new Uint8Array(shared));
+});
+
+test("a version 1 envelope still opens", async () => {
+  const fixture = JSON.parse(readFileSync(new URL("./fixtures/envelope-v1.json", import.meta.url), "utf8"));
+  const secretKey = new Uint8Array(Buffer.from(fixture.secret_key, "base64"));
+  const envelope = new Uint8Array(Buffer.from(fixture.envelope, "hex"));
+  assert.deepEqual(await open(secretKey, envelope), { text: fixture.text, signed: null });
+});
+
+test("a signed message is the same size and names its signer, if the signature holds", async () => {
+  const [inboxKey, secretKey] = await generateKeyPair();
+  const text = "x".repeat(MAX_TEXT_BYTES);
+  const signed = core.signStatement({
+    seed: walletSeed(7),
+    kind: 2,
+    payload: new Uint8Array([...inboxKey, ...new TextEncoder().encode(text)]),
+  });
+  const envelope = await seal(inboxKey, text, signed);
+  assert.equal(envelope.length, ENVELOPE_BYTES);
+
+  const opened = await open(secretKey, envelope);
+  assert.equal(opened.text, text);
+  // The address stein-chain's own wallet gives for this seed.
+  assert.equal(
+    messageSigner(core, inboxKey, opened.text, opened.signed),
+    "st75b5c47ef28c7b2efdda5d1eb3b6fe12eb58afe3f30d4644c273b70cfe8d59215637069b",
+  );
+  // Not for another text, nor for another inbox, nor as a registration.
+  assert.equal(messageSigner(core, inboxKey, "other words", opened.signed), null);
+  const [otherInbox] = await generateKeyPair();
+  assert.equal(messageSigner(core, otherInbox, opened.text, opened.signed), null);
+  assert.equal(registrationAddress(core, opened.signed), null);
+});
+
+test("a registration proves its own account and nothing else", () => {
+  const address = core.addressFromSeed(walletSeed(7));
+  const signed = core.signStatement({ seed: walletSeed(7), kind: 1, payload: core.decodeAddress(address) });
+  assert.equal(registrationAddress(core, signed), address);
+
+  // Another account's address signed by this key is not a registration.
+  const other = core.addressFromSeed(walletSeed(42));
+  const wrong = core.signStatement({ seed: walletSeed(7), kind: 1, payload: core.decodeAddress(other) });
+  assert.equal(registrationAddress(core, wrong), null);
+  const altered = { publicKey: signed.publicKey, signature: signed.signature.slice() };
+  altered.signature[50] ^= 1;
+  assert.equal(registrationAddress(core, altered), null);
+  assert.equal(registrationAddress(core, { publicKey: new Uint8Array(897), signature: signed.signature }), null);
+});
+
+test("the wallet's answer is read back, and junk is not", () => {
+  const signed = core.signStatement({ seed: walletSeed(7), kind: 1, payload: new Uint8Array(32) });
+  const answer = toBase64Url(new Uint8Array([...signed.publicKey, ...signed.signature]));
+  assert.deepEqual(splitAnswer(answer), signed);
+  assert.equal(splitAnswer("declined"), null);
+  assert.equal(splitAnswer("!!"), null);
+  const url = new URL(askUrl("https://wallet.example", "message", "ab".repeat(16), new Uint8Array(1184), "héllo"));
+  const params = new URLSearchParams(url.hash.slice(1));
+  assert.equal(url.pathname, "/sign");
+  assert.equal(params.get("kind"), "message");
+  assert.equal(Buffer.from(params.get("text"), "base64url").toString(), "héllo");
 });

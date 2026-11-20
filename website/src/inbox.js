@@ -5,17 +5,24 @@
 // then AES-256-GCM). Unlocked, it does two things, both here: it answers the
 // server's challenge, which is what lets this page fetch the sealed messages,
 // and it opens them. Neither the key nor the passphrase is ever sent.
+//
+// A message may be signed by a Stein wallet. The signature is checked here,
+// with the wallet core, and the signer's address shown only if it holds.
 
 import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
+import { loadCore } from "../vendor/stein-wallet-core/core.mjs";
 import { open } from "./envelope.js";
 import { PUBLIC_KEY_BYTES, SECRET_KEY_BYTES } from "./format.js";
 import { INBOX_KEY } from "./inbox-key.js";
 import { fromBase64, fromHex, proofOf, toBase64 } from "./proof.js";
+import { messageSigner } from "./statement.js";
 
 const VAULT = "steinchain:inbox-key:v1";
 const ROUNDS = 600_000;
 // Where an ML-KEM-768 secret key carries its own public key.
 const PUBLIC_AT = 1152;
+
+const EXPLORER = "https://steinscan.io/#/address/";
 
 const $ = (id) => document.getElementById(id);
 const views = { setup: $("view-setup"), locked: $("view-locked"), open: $("view-open") };
@@ -108,7 +115,57 @@ async function fetchInbox(extra) {
   return post("/api/inbox/open", { id, proof: await proofOf(shared), ...extra });
 }
 
-async function render({ messages, more }) {
+// The wallet core (FN-DSA-512 verification), loaded when first needed.
+let core;
+const walletCore = () => (core ??= fetch("/stein_wallet_core.wasm").then(loadCore));
+
+function addressLink(address) {
+  const link = document.createElement("a");
+  link.href = EXPLORER + address;
+  link.rel = "noopener";
+  link.target = "_blank";
+  link.className = "address";
+  link.textContent = address;
+  return link;
+}
+
+/** A line saying who signed a message, once the signature has been checked. */
+async function signerLine(text, signed, registered) {
+  const line = document.createElement("div");
+  line.className = "signer";
+  let signer = null;
+  try {
+    signer = messageSigner(await walletCore(), fromBase64(INBOX_KEY), text, signed);
+  } catch {
+    // The core did not load: say so rather than show an unchecked address.
+    line.classList.add("bad");
+    line.textContent = "Signed, but the signature could not be checked here.";
+    return line;
+  }
+  if (!signer) {
+    line.classList.add("bad");
+    line.textContent = "Carries a signature that does not verify. Treat it as anonymous.";
+    return line;
+  }
+  line.append("Signed by ", addressLink(signer), registered.has(signer) ? " · registered" : "");
+  return line;
+}
+
+function renderWallets(wallets) {
+  const list = $("wallets");
+  list.replaceChildren();
+  for (const row of wallets) {
+    const item = document.createElement("li");
+    item.append(addressLink(row.address), ` · ${row.day}`);
+    list.append(item);
+  }
+  const n = wallets.length;
+  $("wallet-count").textContent = n === 0 ? "No registered wallets yet." : `${n} registered wallet${n === 1 ? "" : "s"}`;
+}
+
+async function render({ messages, more, wallets = [] }) {
+  const registered = new Set(wallets.map((w) => w.address));
+  renderWallets(wallets);
   const list = $("messages");
   list.replaceChildren();
   shownThrough = 0;
@@ -120,15 +177,17 @@ async function render({ messages, more }) {
     head.className = "label";
     head.textContent = `#${row.id} · ${row.day}`;
     const body = document.createElement("p");
+    item.append(head, body);
     try {
+      const { text, signed } = await open(secretKey, fromHex(row.envelope));
       // Text from a stranger: only ever set as text, never as markup.
-      body.textContent = await open(secretKey, fromHex(row.envelope));
+      body.textContent = text;
+      if (signed) item.append(await signerLine(text, signed, registered));
     } catch {
       // Anyone can post bytes of the right size; only real envelopes open.
       body.textContent = "(not a message sealed to this key)";
       body.className = "unread";
     }
-    item.append(head, body);
     list.append(item);
   }
   const n = messages.length;

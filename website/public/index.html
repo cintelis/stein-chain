@@ -265,7 +265,8 @@
       <div class="wrap">
         <h2>Send a message</h2>
         <p class="sub">Anonymous, and encrypted before it leaves this page. No account, no email address, no
-          wallet. It does not go on the chain.</p>
+          wallet. Or sign it with your Stein wallet, so the reader knows which account it came from. Either
+          way it does not go on the chain.</p>
         <div class="two">
           <form id="message-form" class="card form" novalidate>
             <label class="label" for="message-text">Your message</label>
@@ -273,7 +274,10 @@
               placeholder="Say what you like. If you want a reply, say how to reach you."></textarea>
             <div class="form-row">
               <span id="message-count" class="count">0 / 4,000</span>
-              <button id="message-send" class="btn" type="submit" disabled>Encrypt and send</button>
+              <span class="form-actions">
+                <button id="message-sign" class="btn btn-ghost" type="button" disabled>Sign with your wallet</button>
+                <button id="message-send" class="btn" type="submit" disabled>Encrypt and send</button>
+              </span>
             </div>
             <p id="message-state" class="form-state" role="status" aria-live="polite"></p>
             <noscript><p class="form-state bad">The form needs JavaScript: the message is encrypted in your browser.</p></noscript>
@@ -284,13 +288,35 @@
                 bytes it cannot read; the key that opens them is not on the server.</li>
               <li><b>The site stores nothing about you:</b> no IP address, no cookie, no browser details, no
                 request log. Only the sealed message and the date it arrived.</li>
-              <li><b>Every message is the same size</b> once sealed, so its length says nothing.</li>
+              <li><b>Every message is the same size</b> once sealed, signed or not, so neither its length
+                nor whether a wallet signed it shows.</li>
             </ul>
+            <p class="fine form-fine"><b>Signed</b> messages are signed at
+              <a href="https://wallet.steinchain.com" rel="noopener">steinwallet</a> and carry your account's
+              address inside the sealed bytes: the reader sees it, the site does not. A signature is not a
+              transaction and costs nothing.</p>
             <p class="fine form-fine">Your network still sees that you visited this site, and Cloudflare, which
               carries it, sees your address as it does for any website it carries. To hide that too, use
               <a href="https://www.torproject.org/download/" rel="noopener">Tor Browser</a>. And the words are
               yours: do not put in anything that identifies you unless you mean to.</p>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="register-wallet">
+      <div class="wrap">
+        <h2>Register your wallet</h2>
+        <p class="sub">Tell Stein Chain that an account has a holder. You prove it by signing with
+          <a href="https://wallet.steinchain.com" rel="noopener">steinwallet</a>; your key never leaves it.</p>
+        <div class="card register">
+          <div>
+            <p>What is kept is the account's address and the proof you signed: no name, no email, nothing else
+              about you. The address is public on the chain already. Registering is not a transaction, costs
+              nothing and promises nothing: the devnet's STEIN has no value.</p>
+            <p id="register-state" class="form-state" role="status" aria-live="polite"></p>
+          </div>
+          <button id="register" class="btn" type="button">Register with steinwallet</button>
         </div>
       </div>
     </section>

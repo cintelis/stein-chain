@@ -3,6 +3,7 @@
 //
 //   node inbox/read.mjs                  print every message
 //   node inbox/read.mjs --purge          print them, then delete them from the database
+//   node inbox/read.mjs --wallets        list the registered wallets instead
 //   node inbox/read.mjs --key <file>     secret key file (default ~/.stein/inbox.key)
 //
 // wrangler needs access to the Cloudflare account: `npx wrangler login`, or
@@ -15,6 +16,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { open } from "../src/envelope.js";
+import { INBOX_KEY } from "../src/inbox-key.js";
+import { messageSigner } from "../src/statement.js";
+import { loadCore } from "../vendor/stein-wallet-core/core.mjs";
 
 const DATABASE = "steinchain-inbox";
 const args = process.argv.slice(2);
@@ -38,6 +42,19 @@ function sql(command) {
   return JSON.parse(out)[0].results;
 }
 
+if (args.includes("--wallets")) {
+  const wallets = sql("SELECT address, day FROM wallets ORDER BY rowid");
+  for (const wallet of wallets) console.log(`${wallet.address}  ${wallet.day}`);
+  console.log(`${wallets.length} registered wallet(s).`);
+  process.exit(0);
+}
+
+// The wallet core checks a signed message's signature.
+const core = await loadCore(
+  readFileSync(join(website, "vendor", "stein-wallet-core", "stein_wallet_core.wasm")),
+);
+const inboxKey = new Uint8Array(Buffer.from(INBOX_KEY, "base64"));
+
 const rows = sql("SELECT id, day, hex(envelope) AS envelope FROM messages ORDER BY id");
 if (rows.length === 0) {
   console.log("The inbox is empty.");
@@ -48,7 +65,12 @@ let opened = 0;
 for (const row of rows) {
   console.log(`\n#${row.id} · ${row.day}`);
   try {
-    console.log(await open(secretKey, new Uint8Array(Buffer.from(row.envelope, "hex"))));
+    const { text, signed } = await open(secretKey, new Uint8Array(Buffer.from(row.envelope, "hex")));
+    if (signed) {
+      const signer = messageSigner(core, inboxKey, text, signed);
+      console.log(signer ? `signed by ${signer}` : "carries a signature that does NOT verify: treat as anonymous");
+    }
+    console.log(text);
     opened += 1;
   } catch {
     // Anyone can post bytes of the right size; only real envelopes open.

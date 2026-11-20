@@ -1,5 +1,6 @@
 node_modules/
 .wrangler/
-# Built from src/message.js and src/inbox.js
+# Built by scripts/build.mjs
 public/message.js
 public/inbox.js
+public/stein_wallet_core.wasm

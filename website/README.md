@@ -17,9 +17,11 @@ encrypted message inbox.
   Chromium) and commit the new PNG.
 - `_headers`: the security headers. Scripts and styles come from this origin
   only, and the page may connect only to itself and the two devnet nodes.
-- `message.js`, `inbox.js`: the message form and the inbox page
-  (`inbox.html`, at `/inbox`). Built from `src/` by `npm run build` (wrangler
-  runs it before `dev` and `deploy`); not committed.
+- `message.js`, `inbox.js`, `stein_wallet_core.wasm`: the message form with
+  wallet registration, the inbox page (`inbox.html`, at `/inbox`), and the
+  wallet core they check signatures with. Built from `src/` and `vendor/` by
+  `npm run build` (`scripts/build.mjs`; wrangler runs it before `dev` and
+  `deploy`); not committed.
 
 ## Motion
 
@@ -54,8 +56,8 @@ anonymous is what is never collected:
 
 - **Sealed in the browser.** `src/envelope.js` encrypts the text to the
   inbox's public key (`src/inbox-key.js`) with ML-KEM-768 (FIPS 203), HKDF and
-  AES-256-GCM. Every envelope is 5,213 bytes whatever the text (`src/format.js`),
-  so its size says nothing.
+  AES-256-GCM. Every envelope is 7,261 bytes whatever the text and whether or
+  not a wallet signed it (`src/format.js`), so neither shows from outside.
 - **Stored blind.** `src/worker.js` takes `POST /api/message` and writes the
   envelope and the UTC day to the D1 database `steinchain-inbox`. It stores no
   address, header or cookie, logs nothing (`observability` is off), and holds
@@ -76,6 +78,39 @@ applied by hand, before the push that needs it:
 npx wrangler d1 migrations apply steinchain-inbox --remote
 ```
 
+## Wallets: signed messages and registration
+
+A visitor with a Stein wallet can do two more things, both by signing a
+**statement** at https://wallet.steinchain.com/sign (`src/statement.js`):
+
+- **Sign a message.** The form sends them to the wallet with the text; the
+  wallet shows it, signs, and sends them back; the page checks the signature,
+  then seals the text together with the signer's public key and signature.
+  The inbox checks the signature again and shows the signer's address. The
+  site still stores only sealed bytes: it cannot tell who signed, or that
+  anyone did.
+- **Register a wallet.** The wallet signs its own address; `POST
+  /api/register` verifies that and stores the address with its proof in the
+  table `wallets`. The list is shown in the inbox (and by `node inbox/read.mjs
+  --wallets`). Three a minute from one address, 500 new ones a day.
+
+A statement is not a transaction. The wallet core signs it over
+`"STEIN-STATEMENT-v1" ‖ kind ‖ payload`, which no transaction's signed bytes
+(`"STEIN-SIG-v1" ‖ …`) can equal, so it cannot be replayed on the chain, and
+it is tied to its purpose: a message's signature covers this inbox's public
+key and the text, a registration's covers the account's own address. The
+wallet answers only to steinchain.com, whatever link brought the visitor.
+
+Signatures are FN-DSA-512 (draft FIPS 206), made and checked by the wallet
+core: `vendor/stein-wallet-core/` holds a build of it (see its README). It is
+the chain's one FN-DSA implementation, `fn-dsa` 0.4.0, compiled to
+WebAssembly from the stein-wallet repository; nothing here links a second
+one. The Worker, the pages and the command-line reader all use that file.
+
+To try the whole loop locally, run the wallet (`stein-wallet`, built with
+`NEXT_PUBLIC_SITE_ORIGIN=http://127.0.0.1:8787`) and this site with
+`WALLET_ORIGIN=<the wallet's address> npm run dev`.
+
 ### Reading it
 
 In a browser, at https://steinchain.com/inbox. The page takes the key file
@@ -86,7 +121,7 @@ page proves it holds the key instead (`src/proof.js`): the Worker
 encapsulates a fresh secret to the inbox's public key, and hands over the
 sealed messages only for the proof derived from that secret, once, within two
 minutes. Without the secret key nobody gets even the sealed bytes. The page
-can also delete the messages it has shown.
+can also delete the messages it has shown, and lists the registered wallets.
 
 The page is as trustworthy as the deployment that serves it: whoever can
 deploy this site could serve a page that takes the key. To read without
@@ -96,6 +131,7 @@ machine:
 ```sh
 node inbox/read.mjs            # print every message
 node inbox/read.mjs --purge    # print them, then delete them from the database
+node inbox/read.mjs --wallets  # list the registered wallets
 ```
 
 It needs wrangler to reach the account (`npx wrangler login`, or
@@ -110,7 +146,7 @@ there changes (transfer sizes, measured rates, the roadmap), change it here.
 
 ```sh
 npm ci
-npm test          # the envelope: round trip, fixed size, tampering, ML-KEM against Node's
+npm test          # the envelope, signed messages, registration, ML-KEM against Node's
 npx wrangler d1 migrations apply steinchain-inbox --local   # once, for the local inbox
 npm run dev       # http://localhost:8787
 npm run deploy    # by hand; pushing to main deploys it (Deploy steinchain.com)
