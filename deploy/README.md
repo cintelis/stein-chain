@@ -20,6 +20,47 @@ blocks only after checking every signature and the state root itself.
 The follower-to-tunnel connection uses Stein's TLS policy (`stein-tls`): TLS
 1.3, with X25519MLKEM768 key exchange, which Cloudflare's edge supports.
 
+## Validator on a VM (current setup)
+
+The devnet's validator runs on a Linux VM, not on a laptop, so the chain keeps
+producing blocks when nobody's machine is on. The VM runs the same compose
+file as below: validator A, the named tunnel that publishes it at
+**https://rpc.steinchain.com**, and the traffic generator. The validator's
+port stays on the VM's loopback; only the tunnel reaches it.
+
+```sh
+echo 'STEIN_VM=user@host'            >  deploy/vm/.env     # gitignored
+echo 'STEIN_VM_KEY=~/.ssh/<key>'     >> deploy/vm/.env
+deploy/vm/ship.sh                    # ship HEAD, rebuild, restart
+deploy/vm/ship.sh --reset            # the same, and start a NEW chain
+```
+
+`ship.sh` sends a `git archive` of the commit to `~/stein-chain` on the VM,
+builds the image there and restarts the services. `~/stein-chain/DEPLOYED_COMMIT`
+records what runs. The validator's key and the faucet key are created on the
+VM, in the `stein-a` volume, and never leave it.
+
+Once per VM, copy the tunnel credentials (section 2) to
+`~/.cloudflared/stein-devnet.json` and make them readable by the tunnel
+container's user alone: `sudo chown 65532 ~/.cloudflared/stein-devnet.json &&
+sudo chmod 600 ~/.cloudflared/stein-devnet.json`.
+
+After `--reset` the chain has a new genesis hash (printed by `ship.sh`): set
+the repository variable `STEIN_GENESIS_HASH` to it and re-run *Deploy
+Cloudflare follower*.
+
+- **Only one validator may run.** Two nodes signing with one key would fork
+  the chain, and two with different keys are two chains behind one address.
+  Do not start `stein-a` with the named tunnel anywhere else.
+- **Deploys are by hand.** This repository is public, and a self-hosted
+  runner on a public repository lets anyone who opens a pull request run code
+  on the VM.
+- **To use the faucet**, run the wallet inside the validator's container:
+  `docker compose -f compose.yml exec stein-a stein send --key /data/faucet.seed --to <address> --amount 100`
+  (in `~/stein-chain/deploy/docker` on the VM).
+
+The sections below describe the same pieces on one machine, for a local devnet.
+
 ## 1. Validator A (local Docker)
 
 ```sh
