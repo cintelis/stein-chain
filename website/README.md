@@ -4,9 +4,14 @@ The Stein Chain home page: static files in `public/`, served by a
 Cloudflare Worker at https://steinchain.com (and `www`), plus an anonymous,
 encrypted message inbox.
 
-- `index.html`, `style.css`: the page. No framework.
-- `app.js`: fills the hero's live figures from the devnet's public RPC
-  (`/status`), the follower first and the validator as a fallback.
+- `index.html`, `style.css`: the page. No framework. `404.html`: what an
+  unknown address gets.
+- `app.js`: the hero's live figures and latest blocks, from the devnet's
+  public RPC (`/status`, `/blocks`), the follower first and the validator as
+  a fallback; and the page's motion (below).
+- `vendor/anime.esm.min.js`: anime.js 4.5.0 (MIT, licence beside it), the
+  animation library `app.js` imports. Vendored so the page loads only its own
+  files. sha256 `c4f88bbcbe703a053ce184f48f7f539fbf2ff358bf64f36e3017edb239964c58`.
 - `og.png`: the 1200 x 630 link-preview card (Open Graph and X). Its source is
   `og/card.html`; after changing it, run `node og/render.cjs` (Playwright with
   Chromium) and commit the new PNG.
@@ -15,6 +20,32 @@ encrypted message inbox.
 - `message.js`, `inbox.js`: the message form and the inbox page
   (`inbox.html`, at `/inbox`). Built from `src/` by `npm run build` (wrangler
   runs it before `dev` and `deploy`); not committed.
+
+## Motion
+
+All of it is in `app.js`, and all of it is decoration: the page reads the
+same without it.
+
+- **Hero.** A triangular lattice (a nod to the lattice problems ML-DSA and
+  FN-DSA rest on) draws in from the centre, its points flickering. Three
+  violet qubits, drawn as Bloch spheres, spread interference rings and every
+  few seconds send a wave at a lattice point; the lattice absorbs it with a
+  green ring and a ripple. The headline rises word by word, and the figures
+  count up.
+- **Real blocks.** When the devnet's height grows, each new block sends a
+  blue ripple and a short path across the lattice and slides into the "Latest
+  blocks" row. The devnet makes a block only when there are transactions, so
+  this is occasional.
+- **Roadmap.** The items slide in once, and the line on the left
+  fills with the scroll position; an item lights up when the line reaches its
+  marker.
+
+With `prefers-reduced-motion`, everything is shown in its end state and
+nothing loops. The elements that animate in start hidden only when scripts
+run and motion is allowed, and a CSS fallback shows them after a few seconds
+if the script fails. SVG parts are animated through attributes (`r`,
+`transform`), not CSS transforms, which would turn them about the corner of
+the view box.
 
 ## The message inbox
 

@@ -6,74 +6,78 @@
   <title>Inbox · Stein Chain</title>
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#070d1a">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="top">
     <div class="wrap top-row">
       <a class="brand" href="/" aria-label="Stein Chain home">
-        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#1366d6"/><path d="M10.5 20.5c1.8 1.8 4.4 2.5 7 1.8 2.5-.7 3.2-3.5.6-4.4l-4.2-1.4c-2.6-.9-2-4.4.6-4.6 1.8-.1 3.4.6 4.6 1.6" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
-        <span class="brand-name">stein<b>chain</b></span>
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#1366d6"/><path d="M10.5 20.5c1.8 1.8 4.4 2.5 7 1.8 2.5-.7 3.2-3.5.6-4.4l-4.2-1.4c-2.6-.9-2-4.4.6-4.6 1.8-.1 3.4.6 4.6 1.6" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
+        <span class="wordmark">stein<span class="accent">chain</span></span>
       </a>
-      <nav class="menu" aria-label="Main"><a href="/">Home</a></nav>
+      <nav class="nav" aria-label="Main"><a class="btn btn-small btn-ghost" href="/">Home</a></nav>
     </div>
   </header>
 
-  <main class="wrap section inbox">
-    <h2>Inbox</h2>
-    <p class="intro">Messages sent from the home page. They are stored sealed; this page opens them here, in your
-      browser, with the inbox's secret key. The key and your passphrase never leave this browser.</p>
+  <main class="inbox">
+    <section>
+      <div class="wrap">
+        <h2>Inbox</h2>
+        <p class="sub">Messages sent from the home page. They are stored sealed; this page opens them here, in your
+          browser, with the inbox's secret key. The key and your passphrase never leave this browser.</p>
 
-    <section id="view-setup" hidden>
-      <form id="setup-form" class="card" novalidate>
-        <span class="tag">Add the key to this browser</span>
-        <label class="label" for="key-file">The inbox key file (inbox.key)</label>
-        <input id="key-file" type="file">
-        <label class="label" for="key-text">or paste its contents</label>
-        <textarea id="key-text" class="key" rows="3" spellcheck="false" autocomplete="off" placeholder="ml-kem-768:…"></textarea>
-        <label class="label" for="new-passphrase">A passphrase to lock it with in this browser</label>
-        <input id="new-passphrase" type="password" autocomplete="new-password">
-        <label class="label" for="new-passphrase-again">The passphrase again</label>
-        <input id="new-passphrase-again" type="password" autocomplete="new-password">
-        <div class="form-row">
-          <span class="count">Keep the key file: the passphrase only unlocks this browser's copy.</span>
-          <button class="btn primary" type="submit">Save and open</button>
+        <div id="view-setup" hidden>
+          <form id="setup-form" class="card form" novalidate>
+            <span class="tag">Add the key to this browser</span>
+            <label class="label" for="key-file">The inbox key file (inbox.key)</label>
+            <input id="key-file" type="file">
+            <label class="label" for="key-text">or paste its contents</label>
+            <textarea id="key-text" class="key" rows="3" spellcheck="false" autocomplete="off" placeholder="ml-kem-768:…"></textarea>
+            <label class="label" for="new-passphrase">A passphrase to lock it with in this browser</label>
+            <input id="new-passphrase" type="password" autocomplete="new-password">
+            <label class="label" for="new-passphrase-again">The passphrase again</label>
+            <input id="new-passphrase-again" type="password" autocomplete="new-password">
+            <div class="form-row">
+              <span class="count">Keep the key file: the passphrase only unlocks this browser's copy.</span>
+              <button class="btn" type="submit">Save and open</button>
+            </div>
+            <p id="setup-state" class="form-state" role="status" aria-live="polite"></p>
+          </form>
         </div>
-        <p id="setup-state" class="form-state" role="status" aria-live="polite"></p>
-      </form>
-    </section>
 
-    <section id="view-locked" hidden>
-      <form id="unlock-form" class="card" novalidate>
-        <span class="tag">Locked</span>
-        <label class="label" for="passphrase">Passphrase</label>
-        <input id="passphrase" type="password" autocomplete="current-password">
-        <div class="form-row">
-          <button id="forget-locked" class="btn quiet" type="button">Remove the key from this browser</button>
-          <button class="btn primary" type="submit">Unlock</button>
+        <div id="view-locked" hidden>
+          <form id="unlock-form" class="card form" novalidate>
+            <span class="tag">Locked</span>
+            <label class="label" for="passphrase">Passphrase</label>
+            <input id="passphrase" type="password" autocomplete="current-password">
+            <div class="form-row">
+              <button id="forget-locked" class="btn btn-quiet" type="button">Remove the key from this browser</button>
+              <button class="btn" type="submit">Unlock</button>
+            </div>
+            <p id="unlock-state" class="form-state" role="status" aria-live="polite"></p>
+          </form>
         </div>
-        <p id="unlock-state" class="form-state" role="status" aria-live="polite"></p>
-      </form>
-    </section>
 
-    <section id="view-open" hidden>
-      <div class="inbox-bar">
-        <span id="inbox-count" class="label"></span>
-        <span class="inbox-actions">
-          <button id="refresh" class="btn" type="button">Refresh</button>
-          <button id="delete" class="btn" type="button" hidden>Delete these messages</button>
-          <button id="lock" class="btn" type="button">Lock</button>
-        </span>
+        <div id="view-open" hidden>
+          <div class="inbox-bar">
+            <span id="inbox-count" class="label"></span>
+            <span class="inbox-actions">
+              <button id="refresh" class="btn btn-small btn-ghost" type="button">Refresh</button>
+              <button id="delete" class="btn btn-small btn-ghost" type="button" hidden>Delete these messages</button>
+              <button id="lock" class="btn btn-small btn-ghost" type="button">Lock</button>
+            </span>
+          </div>
+          <p id="open-state" class="form-state" role="status" aria-live="polite"></p>
+          <div id="messages" class="messages"></div>
+          <p><button id="forget" class="btn btn-quiet" type="button">Remove the key from this browser</button></p>
+        </div>
+
+        <noscript><p class="form-state bad">The inbox needs JavaScript: messages are opened in your browser.</p></noscript>
       </div>
-      <p id="open-state" class="form-state" role="status" aria-live="polite"></p>
-      <div id="messages" class="messages"></div>
-      <p class="note"><button id="forget" class="btn quiet" type="button">Remove the key from this browser</button></p>
     </section>
-
-    <noscript><p class="form-state bad">The inbox needs JavaScript: messages are opened in your browser.</p></noscript>
   </main>
 
-  <script src="inbox.js"></script>
+  <script src="/inbox.js"></script>
 </body>
 </html>

@@ -24,255 +24,296 @@
   <meta name="twitter:image" content="https://steinchain.com/og.png">
   <meta name="twitter:image:alt" content="Stein Chain: the layer-1 that is post-quantum from genesis. FN-DSA-512 accounts, ML-DSA validators, ML-KEM transport.">
   <link rel="canonical" href="https://steinchain.com/">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
 </head>
 <body>
+  <a class="skip" href="#main">Skip to content</a>
+
   <header class="top">
     <div class="wrap top-row">
-      <a class="brand" href="#top" aria-label="Stein Chain">
-        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#1366d6"/><path d="M10.5 20.5c1.8 1.8 4.4 2.5 7 1.8 2.5-.7 3.2-3.5.6-4.4l-4.2-1.4c-2.6-.9-2-4.4.6-4.6 1.8-.1 3.4.6 4.6 1.6" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
-        <span class="brand-name">stein<b>chain</b></span>
+      <a class="brand" href="/" aria-label="Stein Chain home">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#1366d6"/><path d="M10.5 20.5c1.8 1.8 4.4 2.5 7 1.8 2.5-.7 3.2-3.5.6-4.4l-4.2-1.4c-2.6-.9-2-4.4.6-4.6 1.8-.1 3.4.6 4.6 1.6" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
+        <span class="wordmark">stein<span class="accent">chain</span></span>
       </a>
-      <nav class="menu" aria-label="Main">
-        <a href="#why">Why</a>
-        <a href="#technology">Technology</a>
+      <nav class="nav" aria-label="Main">
+        <a href="#how">How it works</a>
         <a href="#numbers">Numbers</a>
         <a href="#roadmap">Roadmap</a>
+        <a href="#faq">FAQ</a>
         <a href="#message">Contact</a>
-        <a href="https://steinscan.io" rel="noopener">Explorer</a>
-        <a href="https://wallet.steinchain.com" rel="noopener">Wallet</a>
-        <a class="gh" href="https://github.com/cintelis/stein-chain" rel="noopener" aria-label="Stein Chain source on GitHub" title="Stein Chain source on GitHub">
-          <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.31-.63-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
+        <a class="gh" href="https://github.com/cintelis/stein-chain" rel="noopener" aria-label="Stein Chain source on GitHub" title="Source on GitHub">
+          <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         </a>
+        <a class="btn btn-small" href="https://wallet.steinchain.com" rel="noopener">Wallet</a>
       </nav>
     </div>
   </header>
 
-  <main id="top">
-    <section class="wrap hero">
-      <div>
-        <div class="badge"><span class="dot"></span>Devnet live</div>
-        <h1>The layer-1 that is <span class="accent">post-quantum</span> from genesis.</h1>
-        <p class="lede">Every signature on Stein Chain is ML-DSA (FIPS 204) or FN-DSA (draft FIPS 206), and every
-          block is re-verified by every node. No ECDSA, no EdDSA, no BLS: nothing a quantum computer breaks.</p>
-        <div class="actions">
-          <a class="btn primary" href="https://wallet.steinchain.com" rel="noopener">Open the wallet</a>
-          <a class="btn" href="https://steinscan.io" rel="noopener">Explore the chain</a>
-          <a class="btn" href="https://github.com/cintelis/stein-chain/blob/main/docs/SPEC.md" rel="noopener">Read the spec</a>
-        </div>
-      </div>
-
-      <aside class="card live" aria-label="Live network">
-        <div class="live-head">
-          <span class="label">Stein devnet · live</span>
-          <span id="live-state" class="state">connecting</span>
-        </div>
-        <dl class="stats">
-          <div><dt>Block height</dt><dd id="s-height">—</dd></div>
-          <div><dt>Transactions</dt><dd id="s-txs">—</dd></div>
-          <div><dt>Accounts</dt><dd id="s-accounts">—</dd></div>
-          <div><dt>Chain id</dt><dd id="s-chain">—</dd></div>
-        </dl>
-        <div class="live-foot">
-          <span id="s-schemes" class="mono">—</span>
-          <a href="https://steinscan.io" rel="noopener">View on steinscan →</a>
-        </div>
-      </aside>
-    </section>
-
-    <section id="why" class="wrap section">
-      <h2>Why post-quantum, and why now</h2>
-      <p class="intro">Most blockchains are secured by elliptic-curve signatures. A large enough quantum computer
-        breaks those, and a public ledger cannot take its history back.</p>
-      <div class="grid three">
-        <article class="card">
-          <h3>The signatures break</h3>
-          <p>Shor's algorithm recovers a private key from an elliptic-curve public key. That covers ECDSA, EdDSA
-            and BLS: the schemes behind nearly every chain in use today.</p>
-        </article>
-        <article class="card">
-          <h3>The ledger is permanent</h3>
-          <p>Public keys published on a chain stay there. An account that has ever spent has its key on record,
-            waiting for the day the mathematics stops protecting it.</p>
-        </article>
-        <article class="card">
-          <h3>Migration is the hard part</h3>
-          <p>Moving a live chain to new signatures means every holder acting before the deadline. Stein starts
-            where that migration ends: there is no classical scheme to retire.</p>
-        </article>
-      </div>
-    </section>
-
-    <section id="technology" class="wrap section">
-      <h2>How Stein is built</h2>
-      <p class="intro">Post-quantum signatures are far larger than the ones they replace. The design is about
-        keeping transactions small and trusting nothing that has not been checked.</p>
-      <div class="grid three">
-        <article class="card">
-          <div class="tag">Signatures</div>
-          <h3>Two post-quantum families</h3>
-          <p><b>FN-DSA-512</b> (draft FIPS 206) is the default for accounts: 666-byte signatures. <b>ML-DSA</b>
-            (FIPS 204) is accepted for accounts and required for validators.</p>
-        </article>
-        <article class="card">
-          <div class="tag">Verification</div>
-          <h3>Every node checks everything</h3>
-          <p>A node verifies every signature in a block, and the resulting state, before it accepts the block.
-            Nothing a block producer claims is taken on trust.</p>
-        </article>
-        <article class="card">
-          <div class="tag">Size</div>
-          <h3>790-byte transfers</h3>
-          <p>An account's public key goes on chain once, with its first transaction. Every later transfer
-            carries a signature only, and fees are charged per byte.</p>
-        </article>
-        <article class="card">
-          <div class="tag">Agility</div>
-          <h3>Ready for the next standard</h3>
-          <p>Every key and signature carries a scheme tag. A new standard is added as a new tag, with no change
-            of format, and accounts on different schemes transact freely.</p>
-        </article>
-        <article class="card">
-          <div class="tag">Hashing</div>
-          <h3>BLAKE3, separated by purpose</h3>
-          <p>Every hash and every signed message has its own domain, so a value made for one purpose can never
-            be replayed as another. Transaction ids cover the body, not the signature.</p>
-        </article>
-        <article class="card">
-          <div class="tag">Transport</div>
-          <h3>Post-quantum between nodes</h3>
-          <p>Nodes talk over TLS 1.3 with a hybrid ML-KEM key exchange, so traffic recorded today cannot be
-            decrypted by a quantum computer later.</p>
-        </article>
-      </div>
-    </section>
-
-    <section id="numbers" class="wrap section">
-      <h2>The numbers</h2>
-      <p class="intro">What a transfer costs in bytes, by signature scheme. Bytes are the scarce resource on a
-        post-quantum chain, so they are what the fee is charged on.</p>
-      <div class="card table-card">
-        <table>
-          <thead>
-            <tr><th>Scheme</th><th>Standard</th><th class="num">Signature</th><th class="num">Transfer</th><th class="num">First transfer, with key</th></tr>
-          </thead>
-          <tbody>
-            <tr class="hl"><td><b>FN-DSA-512</b> <span class="pill">default</span></td><td>draft FIPS 206</td><td class="num">666 B</td><td class="num">790 B</td><td class="num">1,688 B</td></tr>
-            <tr><td>ML-DSA-44</td><td>FIPS 204</td><td class="num">2,420 B</td><td class="num">2,544 B</td><td class="num">3,857 B</td></tr>
-            <tr><td>ML-DSA-65</td><td>FIPS 204</td><td class="num">3,309 B</td><td class="num">3,433 B</td><td class="num">5,386 B</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="grid three facts">
-        <div class="card fact"><div class="big">69%</div><p>smaller transfers with FN-DSA-512 than with ML-DSA-44.</p></div>
-        <div class="card fact"><div class="big">~66,000</div><p>FN-DSA signature verifications per second on one core, measured on a development machine.</p></div>
-        <div class="card fact"><div class="big">1 s</div><p>target block time. The devnet produces a block when transactions are waiting.</p></div>
-      </div>
-      <p class="note">Measured figures are from the protocol specification, section 2, and exclude networking and
-        consensus. They are the ceiling of one node's processor, not network throughput.</p>
-    </section>
-
-    <section id="roadmap" class="wrap section">
-      <h2>Where it stands</h2>
-      <p class="intro">Stein is in development. This is what exists today and what comes next.</p>
-      <div class="grid two">
-        <article class="card">
-          <div class="tag ok">Built</div>
-          <ul class="checks">
-            <li>Devnet with post-quantum transactions, accounts and fees</li>
-            <li>FN-DSA-512 and ML-DSA accounts on one chain</li>
-            <li>Follower nodes that re-verify every block, over post-quantum TLS</li>
-            <li><a href="https://steinscan.io" rel="noopener">steinscan</a>, the live block explorer</li>
-            <li><a href="https://wallet.steinchain.com" rel="noopener">steinwallet</a>, a browser wallet that signs in WebAssembly</li>
-            <li>A command-line wallet and node, in Rust</li>
-          </ul>
-        </article>
-        <article class="card">
-          <div class="tag">Next</div>
-          <ul class="steps">
-            <li>Hardening: fuzzing, state on disk, RPC rate limits</li>
-            <li>Peer-to-peer networking and transaction gossip</li>
-            <li>Proof-of-stake consensus with deterministic finality, formally modelled</li>
-            <li>Public testnet, faucet and wallet SDK</li>
-            <li>Smart contracts in WebAssembly</li>
-            <li>Independent audits, then mainnet</li>
-          </ul>
-        </article>
-      </div>
-      <p class="note"><b>Today the devnet has a single validator, and its STEIN has no value.</b> It can be reset
-        at any time. Nothing here is an offer of a token or an investment.</p>
-    </section>
-
-    <section class="wrap section">
-      <h2>Try it</h2>
-      <div class="grid three">
-        <a class="card link" href="https://wallet.steinchain.com" rel="noopener">
-          <h3>Create a wallet →</h3>
-          <p>Make an account in your browser and send a post-quantum transfer on the devnet.</p>
-        </a>
-        <a class="card link" href="https://steinscan.io" rel="noopener">
-          <h3>Watch the chain →</h3>
-          <p>Blocks, transactions, accounts and validators, live, with every signature scheme shown.</p>
-        </a>
-        <a class="card link" href="https://github.com/cintelis/stein-chain" rel="noopener">
-          <h3>Read the code →</h3>
-          <p>The node, the wallet, the protocol specification and how to run a follower of your own.</p>
-        </a>
-      </div>
-    </section>
-
-    <section id="message" class="wrap section">
-      <h2>Send a message</h2>
-      <p class="intro">Anonymous, and encrypted before it leaves this page. No account, no email address, no
-        wallet. It does not go on the chain.</p>
-      <div class="grid two message">
-        <form id="message-form" class="card" novalidate>
-          <label class="label" for="message-text">Your message</label>
-          <textarea id="message-text" rows="8" spellcheck="true" autocomplete="off"
-            placeholder="Say what you like. If you want a reply, say how to reach you."></textarea>
-          <div class="form-row">
-            <span id="message-count" class="count mono">0 / 4,000</span>
-            <button id="message-send" class="btn primary" type="submit" disabled>Encrypt and send</button>
+  <main id="main">
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <p class="pill" id="net-pill" data-intro>
+            <span class="dot" aria-hidden="true"></span>
+            <span id="net-pill-text">Devnet</span>
+          </p>
+          <h1 id="hero-title">A layer-1 built for the <span class="grad">post-quantum</span> era.</h1>
+          <p class="lede" data-intro>
+            Stein Chain signs every transaction with NIST post-quantum signatures:
+            <strong>FN-DSA-512</strong> for accounts, <strong>ML-DSA</strong> for validators.
+            No ECDSA, no Ed25519, no BLS anywhere in the protocol, and every node
+            re-verifies every block. Native token: <strong>STEIN</strong>.
+          </p>
+          <div class="ctas" data-intro>
+            <a class="btn" href="https://wallet.steinchain.com" rel="noopener">Open the wallet</a>
+            <a class="btn btn-ghost" href="https://steinscan.io" rel="noopener">Explore the chain</a>
+            <a class="link" href="https://github.com/cintelis/stein-chain/blob/main/docs/SPEC.md" rel="noopener">Read the specification &rarr;</a>
           </div>
-          <p id="message-state" class="form-state" role="status" aria-live="polite"></p>
-          <noscript><p class="form-state bad">The form needs JavaScript: the message is encrypted in your browser.</p></noscript>
-        </form>
-        <article class="card">
-          <span class="tag ok">What is kept</span>
-          <ul class="checks">
-            <li><b>Encrypted in your browser</b> with ML-KEM-768 (FIPS 203) and AES-256-GCM. The site stores
-              bytes it cannot read; the key that opens them is not on the server.</li>
-            <li><b>The site stores nothing about you:</b> no IP address, no cookie, no browser details, no request
-              log. Only the sealed message and the date it arrived.</li>
-            <li><b>Every message is the same size</b> once sealed, so its length says nothing.</li>
-          </ul>
-          <p class="note">Your network still sees that you visited this site, and Cloudflare, which carries it,
-            sees your address as it does for any website it carries. To hide that too, use
-            <a href="https://www.torproject.org/download/" rel="noopener">Tor Browser</a>. And the words are
-            yours: do not put in anything that identifies you unless you mean to.</p>
-        </article>
+        </div>
+
+        <!-- Decorative: a lattice that ripples on every devnet block, and the latest blocks. -->
+        <div class="hero-visual" aria-hidden="true">
+          <svg id="lattice" viewBox="0 0 560 460" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <radialGradient id="lattice-fade" cx="50%" cy="50%" r="55%">
+                <stop offset="0%" stop-color="#fff" stop-opacity="1"/>
+                <stop offset="70%" stop-color="#fff" stop-opacity=".55"/>
+                <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+              </radialGradient>
+              <mask id="lattice-mask"><rect width="560" height="460" fill="url(#lattice-fade)"/></mask>
+              <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <g mask="url(#lattice-mask)">
+              <g id="lattice-edges"></g>
+              <g id="lattice-beams" filter="url(#glow)"></g>
+              <g id="lattice-points"></g>
+            </g>
+          </svg>
+          <div class="chain-label"><span>Latest blocks</span><span id="chain-state">waiting for the devnet</span></div>
+          <div class="chain" id="chain"></div>
+        </div>
+      </div>
+
+      <div class="wrap">
+        <dl class="status" aria-live="polite" aria-label="Devnet status" data-intro>
+          <div><dt>Block height</dt><dd id="st-height">&ndash;</dd></div>
+          <div><dt>Transactions</dt><dd id="st-txs">&ndash;</dd></div>
+          <div><dt>Accounts</dt><dd id="st-accounts">&ndash;</dd></div>
+          <div><dt>Block time</dt><dd id="st-blocktime">&ndash;</dd></div>
+          <div class="wide"><dt>Accepted signatures</dt><dd id="st-schemes">&ndash;</dd></div>
+        </dl>
+        <p class="fine" id="st-note" data-intro>Live from the devnet's public RPC: a follower node, or the validator at rpc.steinchain.com.</p>
+      </div>
+    </section>
+
+    <section class="band" id="why">
+      <div class="wrap two">
+        <div>
+          <h2>Why post-quantum, and why now</h2>
+          <p>
+            A cryptographically relevant quantum computer would break ECDSA and Ed25519,
+            the signatures that secure most of today's blockchains. Funds held under those
+            keys could be spent by whoever breaks them, and a chain cannot change its
+            signature scheme overnight.
+          </p>
+          <p>
+            Stein Chain starts post-quantum from genesis instead of retrofitting it later.
+            Keys and signatures carry a scheme tag, so new algorithms, including the final
+            FIPS 206 when it is published, can be added without changing the transaction format.
+          </p>
+        </div>
+        <ul class="checks">
+          <li><b>FIPS 204</b> ML-DSA-44 and ML-DSA-65 signatures, through AWS-LC</li>
+          <li><b>Draft FIPS 206</b> FN-DSA-512 (Falcon) for account keys, the default for new accounts</li>
+          <li><b>BLAKE3</b> hashing, with a separate domain context for every use</li>
+          <li><b>Borsh</b> encoding for everything that is hashed or signed</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="how">
+      <div class="wrap">
+        <h2>How it works</h2>
+        <p class="sub">Security first, then throughput: nothing a block proposer claims is taken on trust.</p>
+        <div class="grid">
+          <article class="card">
+            <h3>Every validator verifies everything</h3>
+            <p>Blocks carry their signatures as witnesses. Each validator checks every signature
+              and the state root itself before it votes, and rejects a block that arrives without them.
+              Signatures are pruned only after finality.</p>
+          </article>
+          <article class="card">
+            <h3>Small post-quantum transfers</h3>
+            <p>An FN-DSA-512 transfer is 789 bytes, against 2,543 bytes with ML-DSA-44. Public keys
+              are registered on chain once, so later transfers carry only the signature.</p>
+          </article>
+          <article class="card">
+            <h3>Verified once per node</h3>
+            <p>A signature is verified when it enters the mempool and cached, so block import does
+              not repeat the work. The cache is keyed so it can never vouch for different bytes.</p>
+          </article>
+          <article class="card">
+            <h3>Built to fail safe</h3>
+            <p>Consensus code uses checked arithmetic and never panics, unsafe Rust is forbidden,
+              and supply conservation is tested. Bounded mempool and caches keep a node's memory in check.</p>
+          </article>
+          <article class="card">
+            <h3>Scales by role, not by machine size</h3>
+            <p>A validator core stays small. RPC nodes, signature-verification workers and the archive
+              scale out separately, so validators can run on modest hardware.</p>
+          </article>
+          <article class="card">
+            <h3>Shard-ready</h3>
+            <p>Sharding is not part of version 1, but every protocol change must keep the invariants
+              that allow it later, and the scaling path runs through signature aggregation and validity proofs.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="numbers">
+      <div class="wrap">
+        <h2>Numbers</h2>
+        <p class="sub">Measured on one development machine (22 threads, release build). These are the CPU
+          ceiling of a single node, before networking, consensus rounds and disk.</p>
+        <div class="stats">
+          <div class="stat"><span class="big">789 B</span><span>FN-DSA-512 transfer</span></div>
+          <div class="stat"><span class="big">~66k/s</span><span>FN-DSA-512 verifications per core</span></div>
+          <div class="stat"><span class="big">~111k tx/s</span><span>block import, warm cache, one node</span></div>
+          <div class="stat"><span class="big">1 s</span><span>block time on the devnet</span></div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Approximate public figures. Stein's are launch targets, not yet measured on a multi-node network.</caption>
+            <thead>
+              <tr><th scope="col"></th><th scope="col">Ethereum L1</th><th scope="col">Solana</th><th scope="col">Stein (target)</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">Quantum-safe signatures</th><td>No</td><td>No</td><td class="yes">Yes</td></tr>
+              <tr><th scope="row">Throughput</th><td>~15&ndash;30 TPS</td><td>~1,000&ndash;4,000 user TPS</td><td>2,000 TPS capacity at launch</td></tr>
+              <tr><th scope="row">Block / slot time</th><td>12 s</td><td>0.4 s</td><td>1 s</td></tr>
+              <tr><th scope="row">Finality</th><td>~13 min</td><td>~1&ndash;2 s optimistic, ~13 s rooted</td><td>~2 s, deterministic</td></tr>
+              <tr><th scope="row">Typical transfer size</th><td>~110 B</td><td>~250 B</td><td>789 B (FN-DSA-512)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="roadmap">
+      <div class="wrap">
+        <h2>Roadmap</h2>
+        <p class="sub">Stein Chain runs today as a single-validator devnet. Peer-to-peer networking and BFT consensus come next.</p>
+        <div class="road-wrap">
+          <div class="road-track" aria-hidden="true"><span class="road-fill"></span></div>
+          <ol class="road">
+            <li class="done"><span class="marker" aria-hidden="true"></span><span class="tag">Done</span><div><b>Devnet</b><p>Post-quantum crypto, transactions, state, fsynced block log, RPC and CLI wallet.</p></div></li>
+            <li class="done"><span class="marker" aria-hidden="true"></span><span class="tag">Done</span><div><b>Followers and PQ TLS</b><p>Follower nodes that re-verify every block, over TLS 1.3 with X25519MLKEM768 key exchange.</p></div></li>
+            <li class="done"><span class="marker" aria-hidden="true"></span><span class="tag">Done</span><div><b>FN-DSA-512 accounts</b><p>789-byte transfers, ahead of the final FIPS 206.</p></div></li>
+            <li class="done"><span class="marker" aria-hidden="true"></span><span class="tag">Done</span><div><b>steinscan and steinwallet</b><p>A live block explorer, and a browser wallet that signs with FN-DSA.</p></div></li>
+            <li class="next"><span class="marker" aria-hidden="true"><span class="ring"></span><span class="ring"></span></span><span class="tag">Next</span><div><b>Hardening</b><p>Fuzzing of every decoder, property tests, state on disk, RPC rate limits, archive offload.</p></div></li>
+            <li><span class="marker" aria-hidden="true"></span><span class="tag">Planned</span><div><b>Peer-to-peer</b><p>QUIC with post-quantum TLS, transaction gossip, compact block propagation.</p></div></li>
+            <li><span class="marker" aria-hidden="true"></span><span class="tag">Planned</span><div><b>Consensus</b><p>BFT proof of stake with ML-DSA votes, a formal model checked for safety, and deterministic simulation testing.</p></div></li>
+            <li><span class="marker" aria-hidden="true"></span><span class="tag">Planned</span><div><b>Public testnet, then mainnet</b><p>Faucet and indexer, two independent audits, a bug bounty and multi-region load tests before genesis.</p></div></li>
+            <li><span class="marker" aria-hidden="true"></span><span class="tag">Designed</span><div><b>WebAssembly smart contracts</b><p>Metered execution, asynchronous receipts and token standards. Design written, not built.</p></div></li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="faq">
+      <div class="wrap narrow">
+        <h2>FAQ</h2>
+        <details>
+          <summary>Can I buy STEIN?</summary>
+          <p>No. Stein Chain is a devnet. STEIN on it has no value, and there is no token sale.
+            Total supply, allocation and issuance have not been decided.</p>
+        </details>
+        <details>
+          <summary>Can I use MetaMask?</summary>
+          <p>No. MetaMask signs with ECDSA, which Stein Chain does not accept by design. Use
+            <a href="https://wallet.steinchain.com" rel="noopener">steinwallet</a>: it creates an
+            FN-DSA-512 account, and your key never leaves your browser.</p>
+        </details>
+        <details>
+          <summary>Why adopt FN-DSA before FIPS 206 is final?</summary>
+          <p>FN-DSA-512 makes transfers about 69% smaller than ML-DSA-44. Stein uses the current draft
+            for account keys only, pinned to one implementation; validators stay on ML-DSA. When the
+            final standard is published it gets a new scheme tag, and the draft stays valid so the chain
+            can replay its own history.</p>
+        </details>
+        <details>
+          <summary>Is it safe to hold real value on Stein Chain?</summary>
+          <p>Not yet. The devnet has one validator and can be reset at any time. Consensus, audits and a
+            public testnet come before any mainnet.</p>
+        </details>
+        <details>
+          <summary>Is the code open?</summary>
+          <p>Yes. The node, specification and tooling are on
+            <a href="https://github.com/cintelis/stein-chain" rel="noopener">GitHub</a>.</p>
+        </details>
+      </div>
+    </section>
+
+    <section id="message">
+      <div class="wrap">
+        <h2>Send a message</h2>
+        <p class="sub">Anonymous, and encrypted before it leaves this page. No account, no email address, no
+          wallet. It does not go on the chain.</p>
+        <div class="two">
+          <form id="message-form" class="card form" novalidate>
+            <label class="label" for="message-text">Your message</label>
+            <textarea id="message-text" rows="8" spellcheck="true" autocomplete="off"
+              placeholder="Say what you like. If you want a reply, say how to reach you."></textarea>
+            <div class="form-row">
+              <span id="message-count" class="count">0 / 4,000</span>
+              <button id="message-send" class="btn" type="submit" disabled>Encrypt and send</button>
+            </div>
+            <p id="message-state" class="form-state" role="status" aria-live="polite"></p>
+            <noscript><p class="form-state bad">The form needs JavaScript: the message is encrypted in your browser.</p></noscript>
+          </form>
+          <div>
+            <ul class="checks">
+              <li><b>Encrypted in your browser</b> with ML-KEM-768 (FIPS 203) and AES-256-GCM. The site stores
+                bytes it cannot read; the key that opens them is not on the server.</li>
+              <li><b>The site stores nothing about you:</b> no IP address, no cookie, no browser details, no
+                request log. Only the sealed message and the date it arrived.</li>
+              <li><b>Every message is the same size</b> once sealed, so its length says nothing.</li>
+            </ul>
+            <p class="fine form-fine">Your network still sees that you visited this site, and Cloudflare, which
+              carries it, sees your address as it does for any website it carries. To hide that too, use
+              <a href="https://www.torproject.org/download/" rel="noopener">Tor Browser</a>. And the words are
+              yours: do not put in anything that identifies you unless you mean to.</p>
+          </div>
+        </div>
       </div>
     </section>
   </main>
 
   <footer class="foot">
     <div class="wrap foot-row">
-      <div class="brand">
-        <svg class="logo small" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#1366d6"/><path d="M10.5 20.5c1.8 1.8 4.4 2.5 7 1.8 2.5-.7 3.2-3.5.6-4.4l-4.2-1.4c-2.6-.9-2-4.4.6-4.6 1.8-.1 3.4.6 4.6 1.6" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
-        <span>Stein Chain</span>
-      </div>
-      <nav aria-label="Stein Chain">
+      <a class="brand" href="/" aria-label="Stein Chain home">
+        <svg class="mark small" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#1366d6"/><path d="M10.5 20.5c1.8 1.8 4.4 2.5 7 1.8 2.5-.7 3.2-3.5.6-4.4l-4.2-1.4c-2.6-.9-2-4.4.6-4.6 1.8-.1 3.4.6 4.6 1.6" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
+        <span class="wordmark small">Stein Chain</span>
+      </a>
+      <nav class="foot-nav" aria-label="Stein Chain">
         <a href="https://steinscan.io" rel="noopener">Explorer</a>
         <a href="https://wallet.steinchain.com" rel="noopener">Wallet</a>
-        <a href="https://github.com/cintelis/stein-chain/blob/main/docs/SPEC.md" rel="noopener">Protocol spec</a>
+        <a href="https://github.com/cintelis/stein-chain/blob/main/docs/SPEC.md" rel="noopener">Specification</a>
         <a href="https://github.com/cintelis/stein-chain" rel="noopener">GitHub</a>
       </nav>
     </div>
-    <div class="wrap foot-bottom">Stein Chain © 2026 · devnet · not a production network</div>
+    <p class="wrap legal">
+      &copy; 2026 Stein Chain. Devnet only: not a production network. Nothing on this site is an offer
+      of tokens or financial advice.
+    </p>
   </footer>
-
-  <script src="app.js"></script>
-  <script src="message.js"></script>
+  <script src="/message.js"></script>
 </body>
 </html>
