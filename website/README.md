@@ -11,7 +11,7 @@ encrypted message inbox.
   a fallback; and the page's motion (below).
 - `vendor/anime.esm.min.js`: anime.js 4.5.0 (MIT, licence beside it), the
   animation library `app.js` imports. Vendored so the page loads only its own
-  files. sha256 `c4f88bbcbe703a053ce184f48f7f539fbf2ff358bf64f36e3017edb239964c58`.
+  files. sha256, with LF line endings as committed: `5b578df3a20e3e2ac9ce8cf880dbdfe442f5f9812b8f8c7638cac6f628a2af7e`.
 - `og.png`: the 1200 x 630 link-preview card (Open Graph and X). Its source is
   `og/card.html`; after changing it, run `node og/render.cjs` (Playwright with
   Chromium) and commit the new PNG.
