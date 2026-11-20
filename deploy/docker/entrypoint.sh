@@ -11,7 +11,8 @@ set -eu
 case "${STEIN_ROLE}" in
   validator)
     if [ ! -f "${STEIN_DATA_DIR}/genesis.json" ]; then
-      stein-node init --chain-id "${STEIN_CHAIN_ID:-31337}" --scheme "${STEIN_SCHEME:-ml-dsa-44}"
+      stein-node init --chain-id "${STEIN_CHAIN_ID:-31337}" ${STEIN_SCHEME:+--scheme "$STEIN_SCHEME"} \
+        ${STEIN_VALIDATOR_SCHEME:+--validator-scheme "$STEIN_VALIDATOR_SCHEME"}
     fi
     exec stein-node run
     ;;

@@ -1,12 +1,16 @@
 # Stein Chain
 
-A post-quantum layer-1 blockchain. Native token: **STEIN**.
+A post-quantum layer-1 blockchain. Native token: **STEIN**. Every signature on
+chain is ML-DSA (FIPS 204) or FN-DSA (draft FIPS 206); every block is
+re-verified by every node.
 
-- **ML-DSA** (FIPS 204) signatures via AWS-LC: **ML-DSA-44** by default
-  (2,543-byte transfers), ML-DSA-65 accepted. Keys and signatures carry a scheme
+- **ML-DSA** (FIPS 204) signatures via AWS-LC: ML-DSA-44
+  (2,543-byte transfers) and ML-DSA-65. Keys and signatures carry a scheme
   tag, so schemes can be added without a format change.
-- **FN-DSA-512** (draft FIPS 206) for accounts that opt in: 789-byte transfers.
-  Adopted ahead of the final standard; validators stay on ML-DSA. See SPEC §3.5.
+- **FN-DSA-512** (draft FIPS 206) is the default for new account keys:
+  789-byte transfers. Adopted ahead of the final standard; validators stay on
+  ML-DSA (ML-DSA-65 by default), and any account may choose ML-DSA instead.
+  See SPEC §3.5.
 - **BLAKE3** hashing with a domain-separation context for every use.
 - Account model with **one-time public-key registration** (−34% bytes per transfer).
 - **Signature verification cache**: each signature is verified once per node,
@@ -26,7 +30,7 @@ consensus are not built yet (SPEC §11). Do not use this for real value.
 
 | Crate | What it does |
 |---|---|
-| `stein-crypto` | Scheme-tagged ML-DSA-44/65 keys and signatures, parallel batch verification, BLAKE3, Merkle trees, addresses, seed files |
+| `stein-crypto` | Scheme-tagged ML-DSA-44/65 and FN-DSA-512 keys and signatures, parallel batch verification, BLAKE3, Merkle trees, addresses, seed files |
 | `stein-types` | Transactions, blocks, genesis, chain parameters, amounts |
 | `stein-state` | Account state, key registry, signature and key caches, block building, full block verification and import |
 | `stein-node` | Mempool, block producer, fsynced block log with re-verification on restart, JSON RPC |
@@ -48,17 +52,17 @@ cargo build --release
 ./target/release/stein-node run
 
 # In another terminal
-./target/release/stein keygen --out bob.seed            # ML-DSA-44; prints bob's address
+./target/release/stein keygen --out bob.seed            # FN-DSA-512; prints bob's address
 ./target/release/stein keygen --scheme ml-dsa-65 --out carol.seed
 ./target/release/stein send --key .stein-devnet/faucet.seed --to <bob-address> --amount 25.5
 ./target/release/stein balance <bob-address>
 ./target/release/stein status
 ```
 
-An FN-DSA account (draft FIPS 206, SPEC §3.5), on a network created by this version:
+New keys are FN-DSA-512 (draft FIPS 206, SPEC §3.5). For an ML-DSA account:
 
 ```sh
-./target/release/stein keygen --scheme fn-dsa-512-draft --out frank.seed
+./target/release/stein keygen --scheme ml-dsa-65 --out carol.seed
 ```
 
 RPC: `GET /status`, `GET /account/{address}`, `GET /account/{address}/txs`,

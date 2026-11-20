@@ -70,9 +70,9 @@ ceiling of one node's CPU, not network throughput (see §10).
 | Option | Steady transfer size | Result |
 |---|---|---|
 | ML-DSA-65 | 3,432 B | baseline in v0.1 |
-| **ML-DSA-44** | **2,543 B (−26%)** | **adopted as devnet default** |
+| **ML-DSA-44** | **2,543 B (−26%)** | **adopted** in v0.2; the default until FN-DSA-512 (below) |
 | zstd level 19 on whole transactions | −2.7% | **rejected**: signatures are random and compress to 99.9% |
-| FN-DSA-512 (Falcon), draft FIPS 206, `fn-dsa` 0.4.0 | **789 B (−69% vs ML-DSA-44)**; verify ~66,000 /s per core; block import ~75,600 tx/s cold, ~111,300 warm | **adopted for accounts, opt-in per account** (§3.5), ahead of the final FIPS 206. ML-DSA-44 stays the default for new keys. |
+| FN-DSA-512 (Falcon), draft FIPS 206, `fn-dsa` 0.4.0 | **789 B (−69% vs ML-DSA-44)**; verify ~66,000 /s per core; block import ~75,600 tx/s cold, ~111,300 warm | **adopted for accounts, opt-in per account** (§3.5), ahead of the final FIPS 206. **Default for new account keys.** |
 | STARK aggregation of all signatures in a block | ~120 B + amortised proof | research (§12) |
 
 ---
@@ -81,8 +81,8 @@ ceiling of one node's CPU, not network throughput (see §10).
 
 | Use | Primitive | Notes |
 |---|---|---|
-| Transaction signatures | **ML-DSA-44** (FIPS 204, NIST cat. 2) by default; ML-DSA-65 (cat. 3) also accepted; **FN-DSA-512** (draft FIPS 206, cat. 1) by account opt-in (§3.5) | 44: pk 1,312 B, sig 2,420 B. 65: pk 1,952 B, sig 3,309 B. FN-DSA-512: pk 897 B, sig 666 B |
-| Validator proposals and votes | ML-DSA-44 or ML-DSA-65 (devnet default 44) | [decision: require ML-DSA-65 for mainnet validators] |
+| Transaction signatures | **FN-DSA-512** (draft FIPS 206, NIST cat. 1) by default for new account keys (§3.5); ML-DSA-44 (FIPS 204, cat. 2) and ML-DSA-65 (cat. 3) also accepted | 44: pk 1,312 B, sig 2,420 B. 65: pk 1,952 B, sig 3,309 B. FN-DSA-512: pk 897 B, sig 666 B |
+| Validator proposals and votes | **ML-DSA-65** (FIPS 204, NIST cat. 3) by default; ML-DSA-44 also accepted. Never a draft scheme | [decision: require ML-DSA-65 for mainnet validators] |
 | Hashing | **BLAKE3**, derive-key mode | Every use has its own context string |
 | P2P key exchange | **X25519MLKEM768** hybrid, or pure ML-KEM-768/1024 | via rustls on AWS-LC [planned] |
 | Implementation | **AWS-LC** (`aws-lc-rs`) for ML-DSA and TLS; `fn-dsa` 0.4.0 for FN-DSA | AWS-LC: FIPS 140-3 validation track; same stack as Sigilant. `fn-dsa`: outside any validation (§3.5) |
@@ -104,8 +104,8 @@ ceiling of one node's CPU, not network throughput (see §10).
 - **FN-DSA (Falcon) is accepted for user accounts**, ahead of the final
   FIPS 206 (§3.5). It gives about 3× smaller transactions than ML-DSA-44 and
   6–7× faster verification (§2.2). Its signing uses Gaussian sampling, which is
-  hard to make constant-time, so it is opt-in per account and **validators
-  stay on ML-DSA**.
+  hard to make constant-time, so **validators stay on ML-DSA** and any
+  account may choose ML-DSA instead.
 
 ### 3.3 Why BLAKE3 and not SHA-256
 Grover's algorithm affects all 256-bit hashes equally (~128-bit preimage
@@ -117,9 +117,9 @@ Every public key and signature carries a one-byte **scheme tag**:
 
 | Tag | Scheme | Status |
 |---|---|---|
-| 1 | ML-DSA-44 | accepted; default for new keys |
-| 2 | ML-DSA-65 | accepted |
-| 3 | FN-DSA-512, draft FIPS 206 (`fn-dsa-512-draft`) | accepted for accounts where genesis lists it (the default); never for validators (§3.5). Means this draft for good |
+| 1 | ML-DSA-44 | accepted |
+| 2 | ML-DSA-65 | accepted; default for validator keys |
+| 3 | FN-DSA-512, draft FIPS 206 (`fn-dsa-512-draft`) | accepted for accounts where genesis lists it (the default), and the default for new account keys; never for validators (§3.5). Means this draft for good |
 | 4–255 | — | unassigned. The final FIPS 206 will take a new tag |
 
 - Wire form: `tag ‖ bytes`, with the byte length fixed by the tag. There is no
@@ -144,8 +144,10 @@ wait for a publication date nobody controls. Transfers are 789 bytes instead of
 2,543 (1,687 with key registration), verification is ~6.5× faster than
 ML-DSA-44, and block import about 2× faster (§2.2).
 
-**How an account uses it:** `stein keygen --scheme fn-dsa-512-draft`. Nothing
-else changes. ML-DSA-44 remains the default for new keys, and accounts on
+**It is the default for new account keys:** `stein keygen` creates an FN-DSA
+key, and `stein-node init` creates an FN-DSA faucet (and an ML-DSA-65
+validator). An account that prefers a
+final standard passes `--scheme ml-dsa-44` or `--scheme ml-dsa-65`. Accounts on
 different schemes transfer freely.
 
 **Which networks accept it:** those whose genesis lists tag 3 in `tx_schemes`.
@@ -161,7 +163,7 @@ accept it: `tx_schemes` is fixed at genesis.
 | The final standard may differ, leaving tag 3 accounts on a scheme no other software speaks. | Tag 3 accounts keep working. To move, an account transfers its balance to an account under another scheme; `RotateKey` (§4.3, planned) will make that in-place. |
 | `fn-dsa` is a second signature implementation, outside any FIPS validation, and its Gaussian sampling is hard to make constant-time. | **Validators never use FN-DSA.** Genesis validation rejects a draft scheme in `validator_schemes` (`DraftValidatorScheme`). A flaw in FN-DSA could cost the accounts that chose it, never consensus. |
 | Two draft implementations could disagree about which signatures verify: a consensus split. | **One implementation.** `scripts/check-crypto-policy.sh` requires `fn-dsa` at exactly 0.4.0, used by `stein-crypto` alone, and refuses any other FN-DSA or Falcon crate. |
-| FN-DSA-512 is NIST category 1, below ML-DSA-44 (category 2). | Opt-in per account. Accounts holding large balances should prefer ML-DSA-65. |
+| FN-DSA-512 is NIST category 1, below ML-DSA-44 (category 2). | Each account chooses its scheme. Accounts holding large balances should prefer ML-DSA-65. |
 
 Also:
 - The name **`-draft`** appears in key files, JSON and the CLI, so no one

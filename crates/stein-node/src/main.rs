@@ -30,10 +30,14 @@ enum Command {
         /// STEIN allocated to the faucet account.
         #[arg(long, default_value_t = 1_000_000_000)]
         faucet_stein: u64,
-        /// Signature scheme for the faucet key (and the validator key, unless
-        /// it follows a draft standard: validators always use ML-DSA).
-        #[arg(long, default_value_t = Scheme::MlDsa44)]
-        scheme: Scheme,
+        /// Signature scheme for the faucet key. Default: fn-dsa-512-draft, or
+        /// ml-dsa-44 with --ml-dsa-only.
+        #[arg(long)]
+        scheme: Option<Scheme>,
+        /// Signature scheme for the validator key: ml-dsa-65 or ml-dsa-44.
+        /// Validators never use a draft-standard scheme.
+        #[arg(long, default_value_t = Scheme::MlDsa65)]
+        validator_scheme: Scheme,
         /// Accept only ML-DSA account keys. By default accounts may also opt in
         /// to FN-DSA-512 per the draft FIPS 206 (SPEC §3.5).
         #[arg(long)]
@@ -77,8 +81,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             chain_id,
             faucet_stein,
             scheme,
+            validator_scheme,
             ml_dsa_only,
-        } => init(&cli.data_dir, chain_id, faucet_stein, scheme, ml_dsa_only),
+        } => init(
+            &cli.data_dir,
+            chain_id,
+            faucet_stein,
+            scheme,
+            validator_scheme,
+            ml_dsa_only,
+        ),
         Command::Run { rpc } => serve(Node::open(&cli.data_dir)?, rpc).await,
         Command::Follow {
             leader,
@@ -98,9 +110,15 @@ fn init(
     dir: &std::path::Path,
     chain_id: u64,
     faucet_stein: u64,
-    scheme: Scheme,
+    scheme: Option<Scheme>,
+    validator_scheme: Scheme,
     ml_dsa_only: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let scheme = scheme.unwrap_or(if ml_dsa_only {
+        Scheme::MlDsa44
+    } else {
+        Scheme::FnDsa512Draft
+    });
     let mut params = ChainParams::default();
     if ml_dsa_only {
         params.tx_schemes.retain(|s| !s.is_draft());
@@ -108,11 +126,9 @@ fn init(
     if !params.tx_schemes.contains(&scheme) {
         return Err(format!("{scheme} keys are not accepted with --ml-dsa-only").into());
     }
-    let validator_scheme = if scheme.is_draft() {
-        Scheme::MlDsa44
-    } else {
-        scheme
-    };
+    if !params.validator_schemes.contains(&validator_scheme) {
+        return Err(format!("validators cannot use {validator_scheme}").into());
+    }
 
     std::fs::create_dir_all(dir)?;
     let genesis_path = dir.join(files::GENESIS);

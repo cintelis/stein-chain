@@ -1,6 +1,6 @@
 //! `stein`: a command-line wallet for the devnet.
 //!
-//! Keys are FIPS 204 seeds in files (see `stein_crypto::create_seed_file`).
+//! Keys are 32-byte seeds in files (see `stein_crypto::create_seed_file`).
 //! That is fine for a devnet; real funds belong in a hardware wallet (SPEC §9).
 
 mod loadgen;
@@ -29,8 +29,10 @@ enum Command {
         /// Where to write the seed. Never overwritten.
         #[arg(long)]
         out: PathBuf,
-        /// Signature scheme: ml-dsa-44 (smaller transactions) or ml-dsa-65.
-        #[arg(long, default_value_t = Scheme::MlDsa44)]
+        /// Signature scheme: fn-dsa-512-draft (smallest transactions; draft
+        /// FIPS 206), ml-dsa-44 or ml-dsa-65 (FIPS 204). A network created
+        /// with `init --ml-dsa-only` accepts only the last two.
+        #[arg(long, default_value_t = Scheme::FnDsa512Draft)]
         scheme: Scheme,
     },
     /// Print the address of a key file.
@@ -72,7 +74,8 @@ enum Command {
         /// Key that funds the accounts, e.g. the devnet faucet.
         #[arg(long)]
         key: PathBuf,
-        /// Number of accounts (one in three uses ML-DSA-65).
+        /// Number of accounts, spread evenly over the schemes the network
+        /// accepts.
         #[arg(long, default_value_t = 20)]
         accounts: usize,
         /// Transfers per second.

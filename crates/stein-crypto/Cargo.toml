@@ -1,6 +1,6 @@
 [package]
 name = "stein-crypto"
-description = "Stein Chain cryptographic primitives: ML-DSA-65 keys and signatures, BLAKE3 hashing, addresses"
+description = "Stein Chain cryptographic primitives: ML-DSA and FN-DSA keys and signatures, BLAKE3 hashing, addresses"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

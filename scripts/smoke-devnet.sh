@@ -80,7 +80,7 @@ wait_height() { # <rpc> <height>
 "$node" --data-dir "$dir/chain" init >/dev/null
 start_node
 
-bob=$("$wallet" keygen --out "$dir/bob.seed" 2>/dev/null)
+bob=$("$wallet" keygen --scheme ml-dsa-44 --out "$dir/bob.seed" 2>/dev/null)
 carol=$("$wallet" keygen --scheme ml-dsa-65 --out "$dir/carol.seed" 2>/dev/null)
 
 "$wallet" --rpc "$rpc" send --key "$dir/chain/faucet.seed" --to "$bob" --amount 100
