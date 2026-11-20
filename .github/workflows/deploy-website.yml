@@ -39,9 +39,9 @@ jobs:
       # wrangler is pinned in package-lock.json; no third-party deploy action.
       - run: npm ci --no-audit --no-fund
       - run: npm test
-      # The inbox's table, before the Worker that writes to it. Applying a
-      # migration twice does nothing.
-      - run: npx wrangler d1 migrations apply steinchain-inbox --remote
+      # The deploy token has no D1 rights, on purpose: this workflow can
+      # neither read nor delete the inbox. A new migration is applied by hand
+      # before the push that needs it (website/README.md).
       # Builds public/message.js (wrangler.jsonc, "build"), then deploys.
       - run: npx wrangler deploy
       # What is served must be what was committed, with the security headers.

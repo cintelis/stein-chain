@@ -36,6 +36,14 @@ What it cannot hide: the sender's network sees a visit to steinchain.com, and
 Cloudflare sees the sender's address as it does for any site it carries. The
 page says so and points to Tor Browser.
 
+The deploy workflow's token has no rights over the database, so CI can
+neither read nor delete messages. A new file in `migrations/` is therefore
+applied by hand, before the push that needs it:
+
+```sh
+npx wrangler d1 migrations apply steinchain-inbox --remote
+```
+
 Reading it happens on your machine, with the secret key:
 
 ```sh
