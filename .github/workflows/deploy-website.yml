@@ -1,0 +1,60 @@
+name: Deploy steinchain.com
+
+# The home page is a few static files: deploy whenever they change on main,
+# or by hand (Actions → Deploy steinchain.com → Run workflow).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/deploy-website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two deploys at once; a newer push waits for the running one.
+concurrency:
+  group: deploy-website
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      SITE: https://steinchain.com
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: node --check public/app.js
+      # wrangler is pinned in package-lock.json; no third-party deploy action.
+      - run: npm ci --no-audit --no-fund
+      - run: npx wrangler deploy
+      # What is served must be what was committed, with the security headers.
+      # A query string unique to this run bypasses Cloudflare's edge cache.
+      # A new version also rolls out gradually, so back-to-back requests can
+      # be answered by different versions: require three matches in a row.
+      - name: Verify the deployment
+        run: |
+          url="$SITE/app.js?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT"
+          streak=0
+          for _ in $(seq 90); do
+            if curl -fsS "$url" | cmp -s - public/app.js; then streak=$((streak + 1)); else streak=0; fi
+            [ "$streak" -ge 3 ] && break
+            sleep 5
+          done
+          if [ "$streak" -lt 3 ]; then
+            echo "served app.js did not settle on the committed version within 7.5 minutes" >&2
+            exit 1
+          fi
+          headers=$(curl -fsSI "$SITE/")
+          grep -qi "^content-security-policy: default-src 'self'" <<<"$headers"
+          grep -qi "^x-content-type-options: nosniff" <<<"$headers"

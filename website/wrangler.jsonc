@@ -1,0 +1,19 @@
+// steinchain.com: the project's static home page, served from Cloudflare's
+// edge. It holds no state and no secrets; the browser reads the devnet's
+// public RPC directly for the live figures.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "steinchain-site",
+  "compatibility_date": "2026-11-01",
+  // steinchain.com is canonical; www serves the same site. The workers.dev
+  // address stays as a fallback.
+  "routes": [
+    { "pattern": "steinchain.com", "custom_domain": true },
+    { "pattern": "www.steinchain.com", "custom_domain": true }
+  ],
+  "workers_dev": true,
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "404-page"
+  }
+}
