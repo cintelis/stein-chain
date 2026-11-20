@@ -44,39 +44,41 @@ jobs:
       # before the push that needs it (website/README.md).
       # Builds public/message.js (wrangler.jsonc, "build"), then deploys.
       - run: npx wrangler deploy
-      # What is served must be what was committed, with the security headers.
-      # A query string unique to this run bypasses Cloudflare's edge cache.
-      # A new version also rolls out gradually, so back-to-back requests can
-      # be answered by different versions: require three matches in a row.
+      # What is served must be what was committed and built, with the security
+      # headers, and the API must behave. A query string unique to this run
+      # bypasses Cloudflare's edge cache. A new version rolls out gradually,
+      # so back-to-back requests can be answered by different versions: every
+      # check must pass three rounds in a row.
       - name: Verify the deployment
         run: |
-          url="$SITE/app.js?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT"
+          q="?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT"
+          same() { curl -fsS "$SITE/$1$q" | cmp -s - "$2" || { why="served $1 is not the built one"; return 1; }; }
+          answers() { # path, expected status, then curl arguments for the body
+            local path=$1 want=$2 code; shift 2
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "origin: $SITE" "$@" "$SITE$path")
+            [ "$code" = "$want" ] || { why="POST $path answered $code, expected $want"; return 1; }
+          }
+          json=(-H 'content-type: application/json')
+          check() {
+            same app.js public/app.js && same message.js public/message.js && same inbox.js public/inbox.js &&
+              same stein_wallet_core.wasm vendor/stein-wallet-core/stein_wallet_core.wasm || return 1
+            headers=$(curl -fsSI "$SITE/") || { why="the page did not answer"; return 1; }
+            grep -qi "^content-security-policy: default-src 'self'" <<<"$headers" &&
+              grep -qi "^x-content-type-options: nosniff" <<<"$headers" || { why="security headers missing"; return 1; }
+            # The inbox refuses what is not a sealed message (nothing is stored)
+            # and stays shut to a caller without its key, and registration
+            # refuses what is not a key and a signature. All three are refused
+            # before any rate limit, so repeating them costs nothing.
+            answers /api/message 400 --data-binary 'not sealed' &&
+              answers /api/inbox/open 403 "${json[@]}" --data '{"id":"none","proof":"none"}' &&
+              answers /api/register 400 "${json[@]}" --data '{"public_key":"AA","signature":"AA"}'
+          }
           streak=0
+          why="not checked"
           for _ in $(seq 90); do
-            if curl -fsS "$url" | cmp -s - public/app.js; then streak=$((streak + 1)); else streak=0; fi
-            [ "$streak" -ge 3 ] && break
+            if check; then streak=$((streak + 1)); else streak=0; fi
+            [ "$streak" -ge 3 ] && exit 0
             sleep 5
           done
-          if [ "$streak" -lt 3 ]; then
-            echo "served app.js did not settle on the committed version within 7.5 minutes" >&2
-            exit 1
-          fi
-          headers=$(curl -fsSI "$SITE/")
-          grep -qi "^content-security-policy: default-src 'self'" <<<"$headers"
-          grep -qi "^x-content-type-options: nosniff" <<<"$headers"
-          # The message form's script is the one just built, and the inbox
-          # answers: it refuses what is not a sealed message (nothing is stored).
-          curl -fsS "$SITE/message.js?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT" | cmp -s - public/message.js
-          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "origin: $SITE" --data-binary 'not sealed' "$SITE/api/message")
-          [ "$code" = 400 ] || { echo "POST /api/message answered $code, expected 400" >&2; exit 1; }
-          # The inbox page is the one just built, and the inbox stays shut to
-          # a caller without the key.
-          curl -fsS "$SITE/inbox.js?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT" | cmp -s - public/inbox.js
-          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "origin: $SITE" -H 'content-type: application/json' --data '{"id":"none","proof":"none"}' "$SITE/api/inbox/open")
-          [ "$code" = 403 ] || { echo "POST /api/inbox/open answered $code, expected 403" >&2; exit 1; }
-          # The wallet core is the vendored one, and registration takes no
-          # one's word: a key and signature of zeros prove nothing.
-          curl -fsS "$SITE/stein_wallet_core.wasm?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT" | cmp -s - vendor/stein-wallet-core/stein_wallet_core.wasm
-          zeros() { head -c "$1" /dev/zero | base64 -w0; }
-          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "origin: $SITE" -H 'content-type: application/json' --data "{\"public_key\":\"$(zeros 897)\",\"signature\":\"$(zeros 666)\"}" "$SITE/api/register")
-          [ "$code" = 403 ] || { echo "POST /api/register answered $code, expected 403" >&2; exit 1; }
+          echo "the deployment did not settle within 7.5 minutes: $why" >&2
+          exit 1
