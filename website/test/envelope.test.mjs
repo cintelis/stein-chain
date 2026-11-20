@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
 import { generateKeyPair, open, seal } from "../src/envelope.js";
 import { ENVELOPE_BYTES, MAX_TEXT_BYTES, PUBLIC_KEY_BYTES } from "../src/format.js";
+import { proofOf } from "../src/proof.js";
 
 test("a sealed message opens with the secret key, and only with it", async () => {
   const [publicKey, secretKey] = await generateKeyPair();
@@ -47,6 +48,18 @@ test("an altered envelope does not open", async () => {
     altered[at] ^= 1;
     await assert.rejects(open(secretKey, altered), `byte ${at}`);
   }
+});
+
+// The inbox page checks a key file against the site's public key by reading
+// the public key out of the secret key, and proves possession to the server.
+test("a secret key carries its public key, and answers a challenge", async () => {
+  const [publicKey, secretKey] = await generateKeyPair();
+  assert.deepEqual(secretKey.subarray(1152, 1152 + PUBLIC_KEY_BYTES), publicKey);
+  const { cipherText, sharedSecret } = ml_kem768.encapsulate(publicKey);
+  const proof = await proofOf(sharedSecret);
+  assert.equal(await proofOf(ml_kem768.decapsulate(cipherText, secretKey)), proof);
+  const [, otherSecret] = await generateKeyPair();
+  assert.notEqual(await proofOf(ml_kem768.decapsulate(cipherText, otherSecret)), proof);
 });
 
 // The library against an independent implementation (OpenSSL, through Node):

@@ -69,3 +69,8 @@ jobs:
           curl -fsS "$SITE/message.js?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT" | cmp -s - public/message.js
           code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "origin: $SITE" --data-binary 'not sealed' "$SITE/api/message")
           [ "$code" = 400 ] || { echo "POST /api/message answered $code, expected 400" >&2; exit 1; }
+          # The inbox page is the one just built, and the inbox stays shut to
+          # a caller without the key.
+          curl -fsS "$SITE/inbox.js?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT" | cmp -s - public/inbox.js
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "origin: $SITE" -H 'content-type: application/json' --data '{"id":"none","proof":"none"}' "$SITE/api/inbox/open")
+          [ "$code" = 403 ] || { echo "POST /api/inbox/open answered $code, expected 403" >&2; exit 1; }

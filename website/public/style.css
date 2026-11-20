@@ -131,6 +131,24 @@ button.btn:disabled { opacity: .45; cursor: default; }
 .form-state.bad { color: #fbbf24; }
 .message .note { margin-top: 14px; font-size: 13px; }
 
+/* Inbox page */
+.inbox { max-width: 760px; }
+.inbox form, .inbox .inbox-bar { margin-top: 28px; }
+.inbox form .label { display: block; margin: 14px 0 8px; }
+input[type="password"], input[type="file"] { display: block; width: 100%; padding: 11px 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(2, 6, 23, .55); color: var(--text); font: inherit; font-size: 15px; }
+input[type="file"] { color: var(--soft); font-size: 13.5px; }
+input:focus { outline: none; border-color: var(--accent); }
+textarea.key { min-height: 0; font: 12px/1.5 var(--mono); word-break: break-all; }
+.btn.quiet { border-color: transparent; background: none; color: var(--muted); font-weight: 500; padding-left: 0; }
+.btn.quiet:hover { border-color: transparent; color: #fbbf24; }
+.inbox-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.inbox-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.inbox > section > .form-state { min-height: 1.6em; margin: 10px 0 0; font-size: 13.5px; }
+.messages { display: grid; gap: 12px; }
+.card.msg p { margin: 8px 0 0; color: var(--text); font-size: 15.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.card.msg p.unread { color: var(--muted); font-style: italic; }
+[hidden] { display: none !important; }
+
 /* Footer */
 .foot { margin-top: 80px; border-top: 1px solid #172554; background: #040913; padding: 32px 0 26px; }
 .foot-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }

@@ -1,4 +1,5 @@
 node_modules/
 .wrangler/
-# Built from src/message.js
+# Built from src/message.js and src/inbox.js
 public/message.js
+public/inbox.js

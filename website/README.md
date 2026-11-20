@@ -12,8 +12,9 @@ encrypted message inbox.
   Chromium) and commit the new PNG.
 - `_headers`: the security headers. Scripts and styles come from this origin
   only, and the page may connect only to itself and the two devnet nodes.
-- `message.js`: the message form. Built from `src/message.js` by `npm run
-  build` (wrangler runs it before `dev` and `deploy`); not committed.
+- `message.js`, `inbox.js`: the message form and the inbox page
+  (`inbox.html`, at `/inbox`). Built from `src/` by `npm run build` (wrangler
+  runs it before `dev` and `deploy`); not committed.
 
 ## The message inbox
 
@@ -27,7 +28,7 @@ anonymous is what is never collected:
 - **Stored blind.** `src/worker.js` takes `POST /api/message` and writes the
   envelope and the UTC day to the D1 database `steinchain-inbox`. It stores no
   address, header or cookie, logs nothing (`observability` is off), and holds
-  no key. It has no endpoint that reads the inbox.
+  no key or other secret.
 - **Limited.** Three messages a minute from one address (counted in memory at
   the edge, not stored), 500 a day in all, and only from this site's origin.
 - **Not on the chain.** Nothing here touches Stein Chain.
@@ -44,7 +45,22 @@ applied by hand, before the push that needs it:
 npx wrangler d1 migrations apply steinchain-inbox --remote
 ```
 
-Reading it happens on your machine, with the secret key:
+### Reading it
+
+In a browser, at https://steinchain.com/inbox. The page takes the key file
+once and keeps the key in that browser only, encrypted under a passphrase
+(PBKDF2-SHA-256, 600,000 rounds, AES-256-GCM); the passphrase unlocks it from
+then on. Neither is ever sent. The Worker has no password to check, so the
+page proves it holds the key instead (`src/proof.js`): the Worker
+encapsulates a fresh secret to the inbox's public key, and hands over the
+sealed messages only for the proof derived from that secret, once, within two
+minutes. Without the secret key nobody gets even the sealed bytes. The page
+can also delete the messages it has shown.
+
+The page is as trustworthy as the deployment that serves it: whoever can
+deploy this site could serve a page that takes the key. To read without
+trusting the served page, use the command line, with the secret key on your
+machine:
 
 ```sh
 node inbox/read.mjs            # print every message
