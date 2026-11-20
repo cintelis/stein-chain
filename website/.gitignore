@@ -1,2 +1,4 @@
 node_modules/
 .wrangler/
+# Built from src/message.js
+public/message.js

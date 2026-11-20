@@ -1,10 +1,11 @@
-// steinchain.com: the project's static home page, served from Cloudflare's
-// edge. It holds no state and no secrets; the browser reads the devnet's
-// public RPC directly for the live figures.
+// steinchain.com: the project's home page, served from Cloudflare's edge.
+// Static files, plus one endpoint that takes a sealed message for the inbox
+// (src/worker.js). The Worker holds no secrets: it cannot read the inbox.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "steinchain-site",
-  "compatibility_date": "2026-11-01",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
   // steinchain.com is canonical; www serves the same site. The workers.dev
   // address stays as a fallback.
   "routes": [
@@ -12,8 +13,30 @@
     { "pattern": "www.steinchain.com", "custom_domain": true }
   ],
   "workers_dev": true,
+  // public/message.js is built from src/message.js (the form and the
+  // encryption); wrangler runs this before `dev` and `deploy`.
+  "build": { "command": "npm run build" },
   "assets": {
     "directory": "./public",
-    "not_found_handling": "404-page"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    // Only the API reaches the Worker; pages are served straight from assets.
+    "run_worker_first": ["/api/*"]
+  },
+  // The inbox: sealed messages only. The id is not a secret.
+  "d1_databases": [
+    {
+      "binding": "INBOX",
+      "database_name": "steinchain-inbox",
+      "database_id": "de71d516-9dde-4e5a-9b68-12b74fc5a421",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // At most 3 messages a minute from one address. The counter lives in
+  // memory at the edge; nothing about the sender is written anywhere.
+  "ratelimits": [
+    { "name": "MESSAGE_LIMIT", "namespace_id": "31337", "simple": { "limit": 3, "period": 60 } }
+  ],
+  // No request logs: a message must leave no trace of who sent it.
+  "observability": { "enabled": false }
 }

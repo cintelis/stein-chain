@@ -115,6 +115,22 @@ ul.checks li, ul.steps li { position: relative; padding: 7px 0 7px 26px; color: 
 ul.checks li::before { content: "✓"; position: absolute; left: 0; color: var(--ok); font-weight: 700; }
 ul.steps li::before { content: "→"; position: absolute; left: 0; color: var(--accent-soft); }
 
+/* Message form */
+.message { align-items: start; }
+.message .label { display: block; margin-bottom: 8px; }
+textarea { display: block; width: 100%; min-height: 190px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(2, 6, 23, .55); color: var(--text); font: inherit; font-size: 15px; resize: vertical; }
+textarea::placeholder { color: var(--muted); }
+textarea:focus { outline: none; border-color: var(--accent); }
+.form-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.count { color: var(--muted); font-size: 12px; }
+.count.over { color: #fbbf24; }
+button.btn { font-family: inherit; cursor: pointer; }
+button.btn:disabled { opacity: .45; cursor: default; }
+.card p.form-state { min-height: 1.6em; margin: 12px 0 0; font-size: 13.5px; }
+.form-state.ok { color: var(--ok); }
+.form-state.bad { color: #fbbf24; }
+.message .note { margin-top: 14px; font-size: 13px; }
+
 /* Footer */
 .foot { margin-top: 80px; border-top: 1px solid #172554; background: #040913; padding: 32px 0 26px; }
 .foot-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }

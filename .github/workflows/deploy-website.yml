@@ -1,7 +1,8 @@
 name: Deploy steinchain.com
 
-# The home page is a few static files: deploy whenever they change on main,
-# or by hand (Actions → Deploy steinchain.com → Run workflow).
+# The home page is static files and one small Worker (the message inbox):
+# deploy whenever they change on main, or by hand (Actions → Deploy
+# steinchain.com → Run workflow).
 on:
   push:
     branches: [main]
@@ -37,6 +38,11 @@ jobs:
       - run: node --check public/app.js
       # wrangler is pinned in package-lock.json; no third-party deploy action.
       - run: npm ci --no-audit --no-fund
+      - run: npm test
+      # The inbox's table, before the Worker that writes to it. Applying a
+      # migration twice does nothing.
+      - run: npx wrangler d1 migrations apply steinchain-inbox --remote
+      # Builds public/message.js (wrangler.jsonc, "build"), then deploys.
       - run: npx wrangler deploy
       # What is served must be what was committed, with the security headers.
       # A query string unique to this run bypasses Cloudflare's edge cache.
@@ -58,3 +64,8 @@ jobs:
           headers=$(curl -fsSI "$SITE/")
           grep -qi "^content-security-policy: default-src 'self'" <<<"$headers"
           grep -qi "^x-content-type-options: nosniff" <<<"$headers"
+          # The message form's script is the one just built, and the inbox
+          # answers: it refuses what is not a sealed message (nothing is stored).
+          curl -fsS "$SITE/message.js?verify=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT" | cmp -s - public/message.js
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "origin: $SITE" --data-binary 'not sealed' "$SITE/api/message")
+          [ "$code" = 400 ] || { echo "POST /api/message answered $code, expected 400" >&2; exit 1; }

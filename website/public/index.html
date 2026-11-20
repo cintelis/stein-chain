@@ -39,6 +39,7 @@
         <a href="#technology">Technology</a>
         <a href="#numbers">Numbers</a>
         <a href="#roadmap">Roadmap</a>
+        <a href="#message">Contact</a>
         <a href="https://steinscan.io" rel="noopener">Explorer</a>
         <a href="https://wallet.steinchain.com" rel="noopener">Wallet</a>
         <a class="gh" href="https://github.com/cintelis/stein-chain" rel="noopener" aria-label="Stein Chain source on GitHub" title="Stein Chain source on GitHub">
@@ -220,6 +221,39 @@
         </a>
       </div>
     </section>
+
+    <section id="message" class="wrap section">
+      <h2>Send a message</h2>
+      <p class="intro">Anonymous, and encrypted before it leaves this page. No account, no email address, no
+        wallet. It does not go on the chain.</p>
+      <div class="grid two message">
+        <form id="message-form" class="card" novalidate>
+          <label class="label" for="message-text">Your message</label>
+          <textarea id="message-text" rows="8" spellcheck="true" autocomplete="off"
+            placeholder="Say what you like. If you want a reply, say how to reach you."></textarea>
+          <div class="form-row">
+            <span id="message-count" class="count mono">0 / 4,000</span>
+            <button id="message-send" class="btn primary" type="submit" disabled>Encrypt and send</button>
+          </div>
+          <p id="message-state" class="form-state" role="status" aria-live="polite"></p>
+          <noscript><p class="form-state bad">The form needs JavaScript: the message is encrypted in your browser.</p></noscript>
+        </form>
+        <article class="card">
+          <span class="tag ok">What is kept</span>
+          <ul class="checks">
+            <li><b>Encrypted in your browser</b> with ML-KEM-768 (FIPS 203) and AES-256-GCM. The site stores
+              bytes it cannot read; the key that opens them is not on the server.</li>
+            <li><b>The site stores nothing about you:</b> no IP address, no cookie, no browser details, no request
+              log. Only the sealed message and the date it arrived.</li>
+            <li><b>Every message is the same size</b> once sealed, so its length says nothing.</li>
+          </ul>
+          <p class="note">Your network still sees that you visited this site, and Cloudflare, which carries it,
+            sees your address as it does for any website it carries. To hide that too, use
+            <a href="https://www.torproject.org/download/" rel="noopener">Tor Browser</a>. And the words are
+            yours: do not put in anything that identifies you unless you mean to.</p>
+        </article>
+      </div>
+    </section>
   </main>
 
   <footer class="foot">
@@ -239,5 +273,6 @@
   </footer>
 
   <script src="app.js"></script>
+  <script src="message.js"></script>
 </body>
 </html>
