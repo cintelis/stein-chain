@@ -4,8 +4,10 @@
 # the node, restart it (the block log is re-verified), and check that balances
 # survived. Then node to node: start a follower pinned to the validator's
 # genesis, send a transfer through the follower, and check that both nodes
-# agree on balances and state root. What the test suites, which drive the
-# libraries, do not cover.
+# agree on balances and state root. Then tokens and a pool: issue a token, fund
+# a pool, trade through it from the follower, send the token, redeem the
+# shares, and restart the validator once more. What the test suites, which
+# drive the libraries, do not cover.
 #
 # Usage: scripts/smoke-devnet.sh [target-dir]   (default: target/debug)
 
@@ -56,6 +58,10 @@ stop_node() {
 
 balance() { # <address> [rpc] -> STEIN amount
   "$wallet" --rpc "${2:-$rpc}" balance "$1" | awk '{print $1}'
+}
+
+holding() { # <address> <symbol> [rpc] -> amount of that token held
+  "$wallet" --rpc "${3:-$rpc}" balance "$1" | awk -v s="$2" '$2 == s { print $1 }'
 }
 
 field() { # <rpc> <field> -> value of that field in /status (string or number)
@@ -123,5 +129,47 @@ expect "carol on validator" "28.99994614" "$(balance "$carol")"
 expect "carol on follower" "28.99994614" "$(balance "$carol" "$follower_rpc")"
 expect "bob on follower" "$(balance "$bob")" "$(balance "$bob" "$follower_rpc")"
 expect "state roots agree" "$(field "$rpc" state_root)" "$(field "$follower_rpc" state_root)"
+
+# --- Tokens and a pool -------------------------------------------------------
+# Bob issues 1,000,000.00 GOLD and funds a pool with 10 STEIN : 4,000 GOLD,
+# naming the pair the other way round: the wallet puts it in order.
+gold=$("$wallet" --rpc "$rpc" token issue --key "$dir/bob.seed" --symbol GOLD \
+  --supply 1000000 --decimals 2 | awk '$1 == "token" { print $2 }')
+expect "bob's GOLD" "1000000" "$(holding "$bob" GOLD)"
+pool=$("$wallet" --rpc "$rpc" pool add --key "$dir/bob.seed" --a "$gold" --amount-a 4000 \
+  --b stein --amount-b 10 | awk '$1 == "pool" { print substr($2, 1, length($2) - 1) }')
+expect "pool reserves" "10 STEIN : 4000 GOLD" \
+  "$("$wallet" --rpc "$rpc" pool info "$pool" | awk '{ print $2, $3, $4, $5, $6 }')"
+
+# Carol trades 1 STEIN through the follower. 0.3% stays in the pool:
+# 0.997 x 4,000 / 10.997 = 362.64 GOLD.
+wait_height "$follower_rpc" 6
+"$wallet" --rpc "$follower_rpc" pool swap --key "$dir/carol.seed" --sell stein --amount 1 --buy "$gold"
+wait_height "$follower_rpc" 7
+expect "carol's GOLD" "362.64" "$(holding "$carol" GOLD)"
+expect "carol's GOLD on follower" "362.64" "$(holding "$carol" GOLD "$follower_rpc")"
+
+"$wallet" --rpc "$rpc" token send --key "$dir/carol.seed" --token "$gold" --to "$bob" --amount 62.64
+expect "carol's GOLD after sending" "300" "$(holding "$carol" GOLD)"
+
+# Bob redeems every share he holds: 1,000,000 - 4,000 + 62.64 + the 3,637.30
+# the shares are worth. The pool keeps its locked minimum.
+"$wallet" --rpc "$rpc" pool remove --key "$dir/bob.seed" --pool "$pool" --shares all
+expect "bob's shares" "" "$(holding "$bob" "STEIN/GOLD")"
+expect "bob's GOLD after redeeming" "999699.94" "$(holding "$bob" GOLD)"
+
+wait_height "$follower_rpc" 9
+expect "state roots agree with tokens" "$(field "$rpc" state_root)" "$(field "$follower_rpc" state_root)"
+expect "tokens on follower" "1" "$(field "$follower_rpc" tokens)"
+expect "pools on follower" "1" "$(field "$follower_rpc" pools)"
+
+# The block log replays to the same tokens, pool and root.
+root=$(field "$rpc" state_root)
+stop_node
+start_node
+grep -q "replayed and re-verified block log height=9" "$dir/node.log" \
+  || { echo "smoke: restart did not replay 9 blocks" >&2; exit 1; }
+expect "state root after restart" "$root" "$(field "$rpc" state_root)"
+expect "carol's GOLD after restart" "300" "$(holding "$carol" GOLD)"
 
 echo "smoke: ok"

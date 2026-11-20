@@ -253,3 +253,182 @@ async fn totals_validators_and_top_accounts() {
     assert_eq!(top[0].address, alice.address());
     assert_eq!(top[1].balance_stein, "3");
 }
+
+fn act(alice: &SecretKey, nonce: u64, action: Action) -> Transaction {
+    let body = TxBody {
+        version: TxBody::VERSION,
+        chain_id: 11,
+        sender: alice.address(),
+        nonce,
+        fee: ONE_STEIN / 100,
+        expires_at: 50,
+        action,
+    };
+    Transaction::sign(body, alice, nonce == 0).expect("sign")
+}
+
+/// Tokens and pools over RPC, on a validator, on a follower that verified
+/// the same blocks, and on a validator restarted from its log: outcomes are
+/// not stored, so each node must derive the same ones.
+#[tokio::test(flavor = "multi_thread")]
+async fn tokens_pools_and_outcomes_are_served_by_every_node() {
+    use stein_node::rpc::{AccountView, PoolView, Status, TokenView};
+    use stein_types::{Asset, Outcome, PoolError, pool_address};
+
+    let (a_dir, b_dir) = (
+        tempfile::tempdir().expect("a"),
+        tempfile::tempdir().expect("b"),
+    );
+    let (alice, genesis) = setup(a_dir.path());
+    let a = Node::open(a_dir.path()).expect("validator");
+    let url = serve(Arc::clone(&a)).await;
+    let b = Node::open_follower(b_dir.path(), &url, genesis.hash())
+        .await
+        .expect("follower");
+    let b_url = serve(Arc::clone(&b)).await;
+
+    let gold = Address::token(&alice.address(), 0);
+    let pool = pool_address(Asset::Stein, Asset::Token(gold));
+    let swap = |nonce: u64, min_out: u128| {
+        act(
+            &alice,
+            nonce,
+            Action::Swap {
+                asset_in: Asset::Stein,
+                amount_in: ONE_STEIN,
+                asset_out: Asset::Token(gold),
+                min_out,
+            },
+        )
+    };
+    let txs = vec![
+        act(
+            &alice,
+            0,
+            Action::IssueToken {
+                symbol: "GOLD".into(),
+                decimals: 2,
+                supply: 1_000_000,
+            },
+        ),
+        act(
+            &alice,
+            1,
+            Action::AddLiquidity {
+                asset_a: Asset::Stein,
+                amount_a: 10 * ONE_STEIN,
+                asset_b: Asset::Token(gold),
+                amount_b: 400_000,
+                min_shares: 0,
+            },
+        ),
+        // 0.997 × 400,000 ÷ 10.997 = 36,264; the second asks for too much.
+        swap(2, 36_264),
+        swap(3, 400_000),
+    ];
+    let (filled, returned) = (txs[2].id(), txs[3].id());
+    // Admission checks what the sender holds now, so the token must be in a
+    // block before it can be deposited, and the pool funded before a swap is
+    // worth sending. The two swaps share a block.
+    for (i, tx) in txs.into_iter().enumerate() {
+        a.submit(tx).await.expect("submit");
+        if i != 2 {
+            a.produce_block().expect("produce");
+        }
+    }
+    b.sync_once().await.expect("sync");
+
+    let owner = alice.address();
+    let check = |url: String| async move {
+        let status: Status = get(&format!("{url}/status")).await;
+        assert_eq!((status.tokens, status.pools), (1, 1));
+
+        let tokens: Vec<TokenView> = get(&format!("{url}/tokens")).await;
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].address, gold);
+        assert_eq!(tokens[0].supply_formatted, "10000");
+        let token: TokenView = get(&format!("{url}/token/{gold}")).await;
+        assert_eq!((token.symbol.as_str(), token.decimals), ("GOLD", 2));
+        assert_eq!(token.issuer, owner);
+
+        let p: PoolView = get(&format!("{url}/pool/{pool}")).await;
+        assert_eq!((p.asset_a, p.asset_b), (Asset::Stein, Asset::Token(gold)));
+        assert_eq!(p.reserve_a_formatted, "11");
+        assert_eq!(p.reserve_b, (400_000 - 36_264).to_string());
+        assert_eq!(
+            (p.symbol_a.as_str(), p.symbol_b.as_str()),
+            ("STEIN", "GOLD")
+        );
+        let pools: Vec<PoolView> = get(&format!("{url}/pools")).await;
+        assert_eq!(pools.len(), 1);
+
+        let account: AccountView = get(&format!("{url}/account/{}", owner)).await;
+        assert_eq!(account.kind, "account");
+        let held: Vec<(&str, &str, bool)> = account
+            .holdings
+            .iter()
+            .map(|h| {
+                (
+                    h.symbol.as_str(),
+                    h.balance_formatted.as_str(),
+                    h.pool_shares,
+                )
+            })
+            .collect();
+        assert!(held.contains(&("GOLD", "6362.64", false)), "{held:?}");
+        assert!(
+            held.iter()
+                .any(|(symbol, _, shares)| *symbol == "STEIN/GOLD shares" && *shares),
+            "{held:?}"
+        );
+        let token_account: AccountView = get(&format!("{url}/account/{gold}")).await;
+        assert_eq!(token_account.kind, "token");
+        let pool_account: AccountView = get(&format!("{url}/account/{pool}")).await;
+        assert_eq!(pool_account.kind, "pool");
+
+        // What each swap did is served with it.
+        let tx: serde_json::Value = get(&format!("{url}/tx/{filled}")).await;
+        let view: TxView = serde_json::from_value(tx["tx"].clone()).expect("view");
+        assert_eq!(view.kind, "swap");
+        assert_eq!(view.to, pool);
+        assert_eq!(view.amount_stein, "1");
+        assert_eq!(view.outcome, Some(Outcome::Swapped { amount_out: 36_264 }));
+        assert_eq!(view.action["asset_out"], gold.to_string());
+        let tx: serde_json::Value = get(&format!("{url}/tx/{returned}")).await;
+        assert_eq!(tx["status"], "included");
+        assert_eq!(tx["tx"]["outcome"]["result"], "refunded");
+        let view: TxView = serde_json::from_value(tx["tx"].clone()).expect("view");
+        assert_eq!(
+            view.outcome,
+            Some(Outcome::Refunded {
+                reason: PoolError::BelowMinimum
+            })
+        );
+
+        // The pool's page lists what went through it; the token's, its issue.
+        let via_pool: Vec<TxView> = get(&format!("{url}/account/{pool}/txs")).await;
+        assert_eq!(via_pool.len(), 3);
+        let of_token: Vec<TxView> = get(&format!("{url}/account/{gold}/txs")).await;
+        assert_eq!(of_token.len(), 1);
+        assert_eq!(of_token[0].kind, "issue_token");
+        assert_eq!(
+            of_token[0].outcome,
+            Some(Outcome::TokenIssued { token: gold })
+        );
+
+        let blocks: Vec<BlockView> = get(&format!("{url}/blocks")).await;
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0].txs.len(), 2);
+        assert!(blocks[0].txs.iter().all(|t| t.outcome.is_some()));
+    };
+    check(url).await;
+    check(b_url).await;
+    assert_eq!(a.state.read().state_root(), b.state.read().state_root());
+
+    // Restarted from its log, the validator derives the same outcomes.
+    let root = a.state.read().state_root();
+    drop(a);
+    let again = Node::open(a_dir.path()).expect("reopen");
+    assert_eq!(again.state.read().state_root(), root);
+    check(serve(again).await).await;
+}

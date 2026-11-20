@@ -320,10 +320,22 @@ parameter, so FN-DSA works in contracts wherever genesis lists it (SPEC §3.5).
 
 | Standard | What | Note |
 |---|---|---|
-| **STN-1 Fungible token** | balances, transfers, `transfer_call` with a callback (NEP-141 style), metadata | Designed for async calls; no "approve then transferFrom" race. |
+| **STN-1 Fungible token** | balances, transfers, `transfer_call` with a callback (NEP-141 style), metadata | Designed for async calls; no "approve then transferFrom" race. For tokens that need rules of their own: plain fixed-supply tokens are native (below). |
 | **STN-2 Non-fungible token** | ownership, transfers, metadata | |
 | **STN-3 PQ multisig** | M-of-N **ML-DSA** signers, proposals, time locks | The flagship. Quantum-safe custody for treasuries and the future foundation. |
 | **STN-4 Events** | event naming and encoding conventions | For indexers and steinscan. |
+
+**Native tokens and pools came first.** Since 21 November 2026 the chain has
+fixed-supply tokens and constant-product liquidity pools as transaction types
+(SPEC §4.6, §4.7), with no VM involved. Contracts build on them:
+- the host API gains `token_balance(token)`, `promise_token_transfer(token,
+  to, amount)` and `promise_swap(…)`, so a contract can hold and trade native
+  tokens. A contract's holdings sit under its address like anyone's;
+- STN-1 remains for tokens whose behaviour the native type does not offer
+  (minting schedules, transfer rules, vesting);
+- the pool's two-half model (sender debits, pool answers with credits) is the
+  same asynchronous pattern as §6, so a contract calling a pool needs nothing
+  new.
 
 ---
 

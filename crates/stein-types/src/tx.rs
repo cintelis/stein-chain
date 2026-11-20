@@ -6,7 +6,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use stein_crypto::{Address, Domain, Hash, KeyError, PublicKey, SecretKey, Signature, hash};
 
-use crate::{Amount, ChainId, ChainParams, Height, Witness};
+use crate::{
+    Amount, Asset, ChainId, ChainParams, Height, MAX_TOKEN_DECIMALS, MAX_TOTAL_SUPPLY, Witness,
+    pool_address, valid_symbol,
+};
 
 /// What a transaction does.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -19,6 +22,173 @@ pub enum Action {
         /// Base units to move. Must be non-zero.
         amount: Amount,
     },
+    /// Create a token with a fixed supply, all of it credited to the sender.
+    /// Its address is `Address::token(sender, nonce)` (SPEC §4.6).
+    IssueToken {
+        /// Display label: capital letters and digits. Not unique.
+        symbol: String,
+        /// Decimal places wallets show.
+        decimals: u8,
+        /// Total supply in base units. Fixed for good.
+        #[serde(with = "crate::amount::string")]
+        supply: Amount,
+    },
+    /// Move a token, or a pool's shares, to another account.
+    TransferToken {
+        /// The token's address, or the pool's for its shares.
+        token: Address,
+        /// Recipient.
+        to: Address,
+        /// Base units to move. Must be non-zero.
+        #[serde(with = "crate::amount::string")]
+        amount: Amount,
+    },
+    /// Deposit both assets of a pair into its pool, for shares of the pool.
+    /// The first deposit creates the pool and sets its price (SPEC §4.7).
+    AddLiquidity {
+        /// First asset; must sort before `asset_b`.
+        asset_a: Asset,
+        /// Most of it to deposit.
+        #[serde(with = "crate::amount::string")]
+        amount_a: Amount,
+        /// Second asset.
+        asset_b: Asset,
+        /// Most of it to deposit.
+        #[serde(with = "crate::amount::string")]
+        amount_b: Amount,
+        /// Fewest shares to accept; otherwise everything is returned.
+        #[serde(with = "crate::amount::string")]
+        min_shares: Amount,
+    },
+    /// Redeem shares of a pool for its two assets.
+    RemoveLiquidity {
+        /// The pool.
+        pool: Address,
+        /// Shares to redeem. Must be non-zero.
+        #[serde(with = "crate::amount::string")]
+        shares: Amount,
+        /// Least of the first asset to accept; otherwise the shares return.
+        #[serde(with = "crate::amount::string")]
+        min_a: Amount,
+        /// Least of the second.
+        #[serde(with = "crate::amount::string")]
+        min_b: Amount,
+    },
+    /// Trade one asset for another through their pool.
+    Swap {
+        /// Asset paid.
+        asset_in: Asset,
+        /// Base units paid. Must be non-zero.
+        #[serde(with = "crate::amount::string")]
+        amount_in: Amount,
+        /// Asset wanted.
+        asset_out: Asset,
+        /// Least to accept; otherwise what was paid is returned.
+        #[serde(with = "crate::amount::string")]
+        min_out: Amount,
+    },
+}
+
+impl Action {
+    /// What the sender must hold and gives up when the transaction is
+    /// included, fee aside. The only state a transaction's validity depends on
+    /// is its sender's (SHARD-READY I-2); no asset appears twice.
+    pub fn debits(&self) -> Vec<(Asset, Amount)> {
+        match self {
+            Self::Transfer { amount, .. } => vec![(Asset::Stein, *amount)],
+            Self::IssueToken { .. } => Vec::new(),
+            Self::TransferToken { token, amount, .. } => vec![(Asset::Token(*token), *amount)],
+            Self::AddLiquidity {
+                asset_a,
+                amount_a,
+                asset_b,
+                amount_b,
+                ..
+            } => vec![(*asset_a, *amount_a), (*asset_b, *amount_b)],
+            Self::RemoveLiquidity { pool, shares, .. } => vec![(Asset::Token(*pool), *shares)],
+            Self::Swap {
+                asset_in,
+                amount_in,
+                ..
+            } => vec![(*asset_in, *amount_in)],
+        }
+    }
+
+    /// The STEIN among [`Action::debits`].
+    pub fn stein_debit(&self) -> Amount {
+        self.debits()
+            .iter()
+            .find(|(asset, _)| *asset == Asset::Stein)
+            .map_or(0, |(_, amount)| *amount)
+    }
+
+    /// The other account the transaction is about: the recipient, the token
+    /// created (given the sender and nonce), or the pool. For indexes and
+    /// display; nothing in consensus depends on it.
+    pub fn counterparty(&self, sender: &Address, nonce: u64) -> Address {
+        match self {
+            Self::Transfer { to, .. } | Self::TransferToken { to, .. } => *to,
+            Self::IssueToken { .. } => Address::token(sender, nonce),
+            Self::AddLiquidity {
+                asset_a, asset_b, ..
+            } => pool_address(*asset_a, *asset_b),
+            Self::RemoveLiquidity { pool, .. } => *pool,
+            Self::Swap {
+                asset_in,
+                asset_out,
+                ..
+            } => pool_address(*asset_in, *asset_out),
+        }
+    }
+
+    /// The action's name, as in its JSON form.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Transfer { .. } => "transfer",
+            Self::IssueToken { .. } => "issue_token",
+            Self::TransferToken { .. } => "transfer_token",
+            Self::AddLiquidity { .. } => "add_liquidity",
+            Self::RemoveLiquidity { .. } => "remove_liquidity",
+            Self::Swap { .. } => "swap",
+        }
+    }
+
+    /// Checks on the action alone.
+    fn check(&self) -> Result<(), TxError> {
+        match self {
+            Self::IssueToken {
+                symbol,
+                decimals,
+                supply,
+            } => {
+                if !valid_symbol(symbol) {
+                    return Err(TxError::BadSymbol);
+                }
+                if *decimals > MAX_TOKEN_DECIMALS {
+                    return Err(TxError::BadDecimals);
+                }
+                if *supply == 0 {
+                    return Err(TxError::ZeroAmount);
+                }
+                if *supply > MAX_TOTAL_SUPPLY {
+                    return Err(TxError::SupplyTooLarge);
+                }
+            }
+            Self::AddLiquidity {
+                asset_a, asset_b, ..
+            } if asset_a >= asset_b => return Err(TxError::AssetOrder),
+            Self::Swap {
+                asset_in,
+                asset_out,
+                ..
+            } if asset_in == asset_out => return Err(TxError::AssetOrder),
+            _ => {}
+        }
+        if self.debits().iter().any(|(_, amount)| *amount == 0) {
+            return Err(TxError::ZeroAmount);
+        }
+        Ok(())
+    }
 }
 
 /// The part of a transaction that is executed and kept forever.
@@ -122,9 +292,25 @@ pub enum TxError {
     /// The transaction has expired or sets an expiry too far ahead.
     #[error("expired or expiry too far in the future")]
     Expiry,
-    /// A transfer of zero.
+    /// A transfer, deposit, swap or supply of zero.
     #[error("amount must be non-zero")]
     ZeroAmount,
+    /// Not a usable token symbol.
+    #[error(
+        "a symbol is 1 to 12 capital letters and digits, starting with a letter, and not STEIN"
+    )]
+    BadSymbol,
+    /// More decimal places than a token may have.
+    #[error("a token has at most {MAX_TOKEN_DECIMALS} decimal places")]
+    BadDecimals,
+    /// A token supply at or above 2^127 base units: a credit could then
+    /// overflow, and credits must never fail (SHARD-READY I-1).
+    #[error("a token's supply must be below 2^127 base units")]
+    SupplyTooLarge,
+    /// A pair that is one asset twice, or a deposit naming its assets out of
+    /// canonical order.
+    #[error("a pair is two different assets, STEIN first, then tokens by address")]
+    AssetOrder,
     /// Arithmetic would overflow.
     #[error("amount overflow")]
     Overflow,
@@ -196,10 +382,7 @@ impl Transaction {
         if self.body.fee < required {
             return Err(TxError::FeeTooLow { required });
         }
-        match &self.body.action {
-            Action::Transfer { amount: 0, .. } => return Err(TxError::ZeroAmount),
-            Action::Transfer { .. } => {}
-        }
+        self.body.action.check()?;
         if !params.tx_schemes.contains(&self.witness.signature.scheme()) {
             return Err(TxError::UnsupportedScheme);
         }

@@ -23,7 +23,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use parking_lot::{Mutex, RwLock};
 use stein_crypto::{Hash, SecretKey, secret_key_from_seed_file};
 use stein_state::State;
-use stein_types::{Block, Genesis, Transaction};
+use stein_types::{Block, Genesis, Outcome, Transaction};
 
 use crate::mempool::{Limits, Mempool};
 use crate::store::Store;
@@ -206,7 +206,7 @@ impl Node {
                 height,
                 reason: e.to_string(),
             })?;
-            store.append(block, false)?;
+            store.append(block, state.last_outcomes(), false)?;
         }
         tracing::info!(
             height = state.height(),
@@ -276,8 +276,9 @@ impl Node {
     /// The event for `block`, if anyone is listening. Sent only after the
     /// block is persisted and indexed, so a subscriber that reacts to it finds
     /// the block through RPC.
-    fn block_event(&self, block: &stein_types::Block) -> Option<views::Event> {
-        (self.events.receiver_count() > 0).then(|| views::Event::Block(views::BlockView::of(block)))
+    fn block_event(&self, block: &Block, outcomes: &[Outcome]) -> Option<views::Event> {
+        (self.events.receiver_count() > 0)
+            .then(|| views::Event::Block(views::BlockView::of(block, outcomes)))
     }
 
     /// Builds, persists and indexes one block if there is anything to include
@@ -311,8 +312,10 @@ impl Node {
         let height = block.header.height;
         let count = block.bodies.len();
         // Persist before anyone can observe the new state through RPC.
-        let event = self.block_event(&block);
-        self.store.write().append(block, true)?;
+        let event = self.block_event(&block, state.last_outcomes());
+        self.store
+            .write()
+            .append(block, state.last_outcomes(), true)?;
         if let Some(event) = event {
             let _ = self.events.send(event);
         }
@@ -372,12 +375,15 @@ impl Node {
             let mut applied = 0u64;
             for block in blocks {
                 let height = block.header.height;
-                node.state
-                    .write()
-                    .import_block(&block)
-                    .map_err(|e| NodeError::Refused(format!("block {height}: {e}")))?;
-                let event = node.block_event(&block);
-                node.store.write().append(block, true)?;
+                let outcomes = {
+                    let mut state = node.state.write();
+                    state
+                        .import_block(&block)
+                        .map_err(|e| NodeError::Refused(format!("block {height}: {e}")))?;
+                    state.last_outcomes().to_vec()
+                };
+                let event = node.block_event(&block, &outcomes);
+                node.store.write().append(block, &outcomes, true)?;
                 if let Some(event) = event {
                     let _ = node.events.send(event);
                 }

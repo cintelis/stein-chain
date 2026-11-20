@@ -11,7 +11,11 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use stein_crypto::{Address, Hash};
-use stein_types::{Amount, ChainId, Transaction, format_amount};
+use stein_state::State;
+use stein_types::{
+    AMOUNT_DECIMALS, Amount, Asset, ChainId, Pool, SWAP_FEE_PER_MILLE, Token, Transaction,
+    format_amount, format_units,
+};
 
 use crate::views::{BlockView, TxView};
 use crate::{Node, Role, SYNC_BATCH};
@@ -37,6 +41,10 @@ pub fn router(node: Arc<Node>) -> Router {
         .route("/validators", get(validators))
         .route("/validator/{address}", get(validator))
         .route("/accounts/top", get(top_accounts))
+        .route("/tokens", get(tokens))
+        .route("/token/{address}", get(token))
+        .route("/pools", get(pools))
+        .route("/pool/{address}", get(pool))
         // Explorers are served from their own origin. Reads are public; the
         // only write, POST /tx, carries its own signature.
         .layer(
@@ -105,6 +113,12 @@ pub struct Status {
     /// Blocks per epoch (fee pool payout interval).
     #[serde(default)]
     pub epoch_blocks: u64,
+    /// Tokens issued.
+    #[serde(default)]
+    pub tokens: usize,
+    /// Liquidity pools.
+    #[serde(default)]
+    pub pools: usize,
 }
 
 async fn status(AxumState(node): AxumState<Arc<Node>>) -> Json<Status> {
@@ -135,6 +149,8 @@ async fn status(AxumState(node): AxumState<Arc<Node>>) -> Json<Status> {
         shard_id: 0,
         fee_pool: Some(stein_types::fee_pool()),
         epoch_blocks: state.params().epoch_blocks,
+        tokens: state.tokens().count(),
+        pools: state.pools().count(),
     })
 }
 
@@ -151,6 +167,81 @@ pub struct AccountView {
     pub nonce: u64,
     /// Whether the account's public key is registered on chain.
     pub key_registered: bool,
+    /// What the address is: `account`, `token` or `pool`.
+    #[serde(default)]
+    pub kind: String,
+    /// Tokens and pool shares the address holds.
+    #[serde(default)]
+    pub holdings: Vec<HoldingView>,
+}
+
+/// A balance of a token or of a pool's shares.
+#[derive(Serialize, Deserialize)]
+pub struct HoldingView {
+    /// The token's address, or the pool's.
+    pub asset: Address,
+    /// Its symbol; for shares, the pair.
+    pub symbol: String,
+    /// Decimal places.
+    pub decimals: u32,
+    /// Whether these are shares of a pool.
+    pub pool_shares: bool,
+    /// Balance in base units (string).
+    pub balance: String,
+    /// Balance in whole units.
+    pub balance_formatted: String,
+}
+
+/// How an asset is shown: its symbol and decimal places. A pool's shares are
+/// named after its pair and counted in whole units.
+fn label(state: &State, asset: &Asset) -> (String, u32) {
+    match asset {
+        Asset::Stein => ("STEIN".into(), AMOUNT_DECIMALS),
+        Asset::Token(address) => match (state.token(address), state.pool(address)) {
+            (Some(token), _) => (token.symbol.clone(), u32::from(token.decimals)),
+            (None, Some(pool)) => {
+                let (a, _) = label(state, &pool.asset_a);
+                let (b, _) = label(state, &pool.asset_b);
+                (format!("{a}/{b} shares"), 0)
+            }
+            (None, None) => ("?".into(), 0),
+        },
+    }
+}
+
+fn account_view(state: &State, address: Address) -> AccountView {
+    let account = state.account(&address).cloned().unwrap_or_default();
+    let holdings = state
+        .holdings_of(&address)
+        .into_iter()
+        .map(|(asset, balance)| {
+            let (symbol, decimals) = label(state, &Asset::Token(asset));
+            HoldingView {
+                asset,
+                symbol,
+                decimals,
+                pool_shares: state.pool(&asset).is_some(),
+                balance: balance.to_string(),
+                balance_formatted: format_units(balance, decimals),
+            }
+        })
+        .collect();
+    let kind = if state.token(&address).is_some() {
+        "token"
+    } else if state.pool(&address).is_some() {
+        "pool"
+    } else {
+        "account"
+    };
+    AccountView {
+        address,
+        balance: account.balance.to_string(),
+        balance_stein: format_amount(account.balance),
+        nonce: account.nonce,
+        key_registered: account.public_key.is_some(),
+        kind: kind.into(),
+        holdings,
+    }
 }
 
 async fn account(AxumState(node): AxumState<Arc<Node>>, Path(address): Path<String>) -> Response {
@@ -158,16 +249,144 @@ async fn account(AxumState(node): AxumState<Arc<Node>>, Path(address): Path<Stri
         Ok(a) => a,
         Err(e) => return error(StatusCode::BAD_REQUEST, e),
     };
+    Json(account_view(&node.state.read(), address)).into_response()
+}
+
+/// A token, as `GET /token/{address}` and `GET /tokens` show it.
+#[derive(Serialize, Deserialize)]
+pub struct TokenView {
+    /// Its address.
+    pub address: Address,
+    /// The account that issued it.
+    pub issuer: Address,
+    /// Display label; not unique.
+    pub symbol: String,
+    /// Decimal places.
+    pub decimals: u32,
+    /// Total supply in base units (string). Fixed.
+    pub supply: String,
+    /// Total supply in whole units.
+    pub supply_formatted: String,
+}
+
+fn token_view(address: &Address, token: &Token) -> TokenView {
+    let decimals = u32::from(token.decimals);
+    TokenView {
+        address: *address,
+        issuer: token.issuer,
+        symbol: token.symbol.clone(),
+        decimals,
+        supply: token.supply.to_string(),
+        supply_formatted: format_units(token.supply, decimals),
+    }
+}
+
+/// `GET /tokens?limit=N`: tokens, in address order.
+async fn tokens(
+    AxumState(node): AxumState<Arc<Node>>,
+    Query(q): Query<ListQuery>,
+) -> Json<Vec<TokenView>> {
     let state = node.state.read();
-    let account = state.account(&address).cloned().unwrap_or_default();
-    Json(AccountView {
-        address,
-        balance: account.balance.to_string(),
-        balance_stein: format_amount(account.balance),
-        nonce: account.nonce,
-        key_registered: account.public_key.is_some(),
-    })
-    .into_response()
+    Json(
+        state
+            .tokens()
+            .take(q.limit.min(MAX_LIST))
+            .map(|(address, token)| token_view(address, token))
+            .collect(),
+    )
+}
+
+/// `GET /token/{address}`.
+async fn token(AxumState(node): AxumState<Arc<Node>>, Path(address): Path<String>) -> Response {
+    let address: Address = match address.parse() {
+        Ok(a) => a,
+        Err(e) => return error(StatusCode::BAD_REQUEST, e),
+    };
+    match node.state.read().token(&address) {
+        Some(token) => Json(token_view(&address, token)).into_response(),
+        None => error(StatusCode::NOT_FOUND, "no such token"),
+    }
+}
+
+/// A liquidity pool, as `GET /pool/{address}` and `GET /pools` show it.
+#[derive(Serialize, Deserialize)]
+pub struct PoolView {
+    /// Its address; also the asset its shares are held under.
+    pub address: Address,
+    /// First asset of the pair: `stein` or a token address.
+    pub asset_a: Asset,
+    /// Second asset.
+    pub asset_b: Asset,
+    /// The first asset's symbol.
+    pub symbol_a: String,
+    /// The second asset's symbol.
+    pub symbol_b: String,
+    /// The first asset's decimal places.
+    pub decimals_a: u32,
+    /// The second asset's decimal places.
+    pub decimals_b: u32,
+    /// Reserve of the first asset, in base units (string).
+    pub reserve_a: String,
+    /// Reserve of the second asset, in base units (string).
+    pub reserve_b: String,
+    /// Reserve of the first asset, in whole units.
+    pub reserve_a_formatted: String,
+    /// Reserve of the second asset, in whole units.
+    pub reserve_b_formatted: String,
+    /// Shares in existence (string), the locked minimum included.
+    pub shares: String,
+    /// The fee a swap leaves in the pool, in thousandths of what is paid in.
+    pub fee_per_mille: u32,
+}
+
+fn pool_view(state: &State, address: &Address, pool: &Pool) -> PoolView {
+    let (symbol_a, decimals_a) = label(state, &pool.asset_a);
+    let (symbol_b, decimals_b) = label(state, &pool.asset_b);
+    let reserve_a = state.balance_of(address, &pool.asset_a);
+    let reserve_b = state.balance_of(address, &pool.asset_b);
+    PoolView {
+        address: *address,
+        asset_a: pool.asset_a,
+        asset_b: pool.asset_b,
+        symbol_a,
+        symbol_b,
+        decimals_a,
+        decimals_b,
+        reserve_a: reserve_a.to_string(),
+        reserve_b: reserve_b.to_string(),
+        reserve_a_formatted: format_units(reserve_a, decimals_a),
+        reserve_b_formatted: format_units(reserve_b, decimals_b),
+        shares: pool.shares.to_string(),
+        fee_per_mille: SWAP_FEE_PER_MILLE as u32,
+    }
+}
+
+/// `GET /pools?limit=N`: pools, in address order.
+async fn pools(
+    AxumState(node): AxumState<Arc<Node>>,
+    Query(q): Query<ListQuery>,
+) -> Json<Vec<PoolView>> {
+    let state = node.state.read();
+    Json(
+        state
+            .pools()
+            .take(q.limit.min(MAX_LIST))
+            .map(|(address, pool)| pool_view(&state, address, pool))
+            .collect(),
+    )
+}
+
+/// `GET /pool/{address}`.
+async fn pool(AxumState(node): AxumState<Arc<Node>>, Path(address): Path<String>) -> Response {
+    let address: Address = match address.parse() {
+        Ok(a) => a,
+        Err(e) => return error(StatusCode::BAD_REQUEST, e),
+    };
+    let state = node.state.read();
+    match state.pool(&address) {
+        Some(pool) => Json(pool_view(&state, &address, pool)).into_response(),
+        None => error(StatusCode::NOT_FOUND, "no such pool"),
+    }
 }
 
 /// `POST /tx` body: the Borsh-encoded transaction, hex.
@@ -205,7 +424,12 @@ async fn tx_status(AxumState(node): AxumState<Arc<Node>>, Path(id): Path<String>
         let tx = store.block(loc.height).and_then(|b| {
             let body = b.bodies.get(loc.index as usize)?;
             let witness = b.witnesses.as_ref().and_then(|w| w.get(loc.index as usize));
-            Some(TxView::of(body, witness, Some((loc.height, loc.index))))
+            Some(TxView::of(
+                body,
+                witness,
+                Some((loc.height, loc.index)),
+                store.outcome(&id),
+            ))
         });
         return Json(
             json!({ "status": "included", "height": loc.height, "index": loc.index, "tx": tx }),
@@ -315,7 +539,8 @@ async fn blocks(
     let views = (1..=top)
         .rev()
         .take(q.limit.min(MAX_LIST))
-        .filter_map(|h| store.block(h).map(BlockView::of))
+        .filter_map(|h| store.block(h))
+        .map(|b| BlockView::of(b, &store.outcomes_for(b)))
         .collect();
     Json(views)
 }
@@ -353,7 +578,12 @@ async fn account_txs(
             let b = store.block(loc.height)?;
             let body = b.bodies.get(loc.index as usize)?;
             let witness = b.witnesses.as_ref().and_then(|w| w.get(loc.index as usize));
-            Some(TxView::of(body, witness, Some((loc.height, loc.index))))
+            Some(TxView::of(
+                body,
+                witness,
+                Some((loc.height, loc.index)),
+                store.outcome(&body.id()),
+            ))
         })
         .collect();
     Json(views).into_response()
@@ -418,13 +648,7 @@ async fn top_accounts(
         state
             .richest(q.limit.min(MAX_LIST))
             .into_iter()
-            .map(|(address, a)| AccountView {
-                address,
-                balance: a.balance.to_string(),
-                balance_stein: format_amount(a.balance),
-                nonce: a.nonce,
-                key_registered: a.public_key.is_some(),
-            })
+            .map(|(address, _)| account_view(&state, address))
             .collect(),
     )
 }
@@ -464,7 +688,8 @@ async fn validator(
     let (count, heights) = store.proposed(&address, q.limit.min(MAX_LIST));
     let blocks: Vec<BlockView> = heights
         .into_iter()
-        .filter_map(|h| store.block(h).map(BlockView::of))
+        .filter_map(|h| store.block(h))
+        .map(|b| BlockView::of(b, &store.outcomes_for(b)))
         .collect();
     Json(json!({ "validator": entry, "blocks_proposed": count, "blocks": blocks })).into_response()
 }

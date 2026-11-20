@@ -4,20 +4,20 @@ use super::*;
 use stein_crypto::Signature;
 use stein_types::{Allocation, GenesisValidator, ONE_STEIN};
 
-const CHAIN: ChainId = 31337;
+pub(crate) const CHAIN: ChainId = 31337;
 
-struct Net {
-    validator: SecretKey,
-    alice: SecretKey,
-    bob: SecretKey,
-    genesis: Genesis,
+pub(crate) struct Net {
+    pub(crate) validator: SecretKey,
+    pub(crate) alice: SecretKey,
+    pub(crate) bob: SecretKey,
+    pub(crate) genesis: Genesis,
 }
 
-fn key(n: u8) -> SecretKey {
+pub(crate) fn key(n: u8) -> SecretKey {
     SecretKey::from_seed(stein_crypto::Scheme::MlDsa44, &[n; 32]).expect("key")
 }
 
-fn net() -> Net {
+pub(crate) fn net() -> Net {
     let (validator, alice, bob) = (key(1), key(2), key(3));
     let genesis = Genesis {
         chain_id: CHAIN,
@@ -40,7 +40,7 @@ fn net() -> Net {
     }
 }
 
-fn transfer(
+pub(crate) fn transfer(
     from: &SecretKey,
     to: Address,
     amount: Amount,
@@ -59,7 +59,11 @@ fn transfer(
     Transaction::sign(body, from, register).expect("sign")
 }
 
-fn produce(state: &mut State, n: &Net, txs: Vec<Transaction>) -> (Block, Vec<(Hash, TxError)>) {
+pub(crate) fn produce(
+    state: &mut State,
+    n: &Net,
+    txs: Vec<Transaction>,
+) -> (Block, Vec<(Hash, TxError)>) {
     let ts = 2_000 + state.height() * 1_000;
     state.build_block(txs, &n.validator, ts).expect("build")
 }
@@ -137,6 +141,32 @@ fn the_fee_pool_pays_validators_at_each_epoch_boundary() {
         .map_or(0, |a| a.balance);
     let three = leader.account(&second.address()).map_or(0, |a| a.balance);
     assert_eq!((one, three), (fee, 3 * fee), "four fees split 1:3");
+}
+
+/// A chain's history from before tokens must replay to the roots its blocks
+/// carry: while no token or pool exists, the state root is exactly what it
+/// was. These roots were computed by the code as it stood before tokens.
+#[test]
+fn state_roots_from_before_tokens_are_unchanged() {
+    let n = net();
+    let mut state = State::from_genesis(&n.genesis).expect("genesis");
+    let mut roots = vec![state.state_root().to_string()];
+    for tx in [
+        transfer(&n.alice, n.bob.address(), 10 * ONE_STEIN, 0, true),
+        transfer(&n.bob, n.alice.address(), 3 * ONE_STEIN, 0, true),
+    ] {
+        let (_, rejected) = produce(&mut state, &n, vec![tx]);
+        assert!(rejected.is_empty(), "{rejected:?}");
+        roots.push(state.state_root().to_string());
+    }
+    assert_eq!(
+        roots,
+        [
+            "954046e0063b774aade70e7963f1fbff1068ceb9c2aaf110a6198537859b621d",
+            "0866cd41fc94be08986e2d26824ca5c0043af355b8c80dc0ddd98f1a941fe3e3",
+            "422d83a7f7529ab76a4d9318667085cadf1a57cfcfba5de4ffe478b3d3c6734c",
+        ]
+    );
 }
 
 #[test]

@@ -13,7 +13,7 @@ use std::io::{BufReader, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use stein_crypto::{Address, Hash};
-use stein_types::{Action, Block, Height};
+use stein_types::{Block, Height, Outcome};
 
 /// Where each transaction landed.
 #[derive(Debug, Clone, Copy)]
@@ -36,9 +36,14 @@ pub struct Store {
     log_len: u64,
     blocks: Vec<Block>,
     tx_index: HashMap<Hash, TxLocation>,
-    /// Transactions touching each address (as sender or recipient), oldest
-    /// first. For explorers; production moves this to an indexer (SPEC §11.1).
+    /// Transactions touching each address (as sender, recipient, the token
+    /// created or the pool used), oldest first. For explorers; production
+    /// moves this to an indexer (SPEC §11.1).
     by_address: HashMap<Address, Vec<TxLocation>>,
+    /// What transactions did beyond what their bodies say (a token created,
+    /// what a pool paid or why it paid nothing), by id. Not in the log:
+    /// re-derived when the log is replayed.
+    outcomes: HashMap<Hash, Outcome>,
     /// Heights of the blocks each validator proposed, oldest first.
     by_proposer: HashMap<Address, Vec<Height>>,
     retention: u64,
@@ -99,6 +104,7 @@ impl Store {
                 blocks: Vec::new(),
                 tx_index: HashMap::new(),
                 by_address: HashMap::new(),
+                outcomes: HashMap::new(),
                 by_proposer: HashMap::new(),
                 tx_total: 0,
                 retention,
@@ -108,9 +114,15 @@ impl Store {
     }
 
     /// Persists `block` (fsync) and indexes it. Call only after the block has
-    /// been fully validated and applied. `persist` is false only for the
-    /// blocks [`Store::open`] returned, in order: they are in the log already.
-    pub fn append(&mut self, block: Block, persist: bool) -> std::io::Result<()> {
+    /// been fully validated and applied; `outcomes` are what executing it
+    /// gave, in block order. `persist` is false only for the blocks
+    /// [`Store::open`] returned, in order: they are in the log already.
+    pub fn append(
+        &mut self,
+        block: Block,
+        outcomes: &[Outcome],
+        persist: bool,
+    ) -> std::io::Result<()> {
         if persist {
             let bytes = borsh::to_vec(&block)?;
             let len = u32::try_from(bytes.len()).map_err(|_| ErrorKind::InvalidData)?;
@@ -136,12 +148,16 @@ impl Store {
                 height,
                 index: index as u32,
             };
-            self.tx_index.insert(body.id(), at);
+            let id = body.id();
+            self.tx_index.insert(id, at);
             self.tx_total = self.tx_total.saturating_add(1);
-            let Action::Transfer { to, .. } = &body.action;
+            if let Some(outcome) = outcomes.get(index).filter(|o| **o != Outcome::Applied) {
+                self.outcomes.insert(id, outcome.clone());
+            }
+            let other = body.action.counterparty(&body.sender, body.nonce);
             self.by_address.entry(body.sender).or_default().push(at);
-            if *to != body.sender {
-                self.by_address.entry(*to).or_default().push(at);
+            if other != body.sender {
+                self.by_address.entry(other).or_default().push(at);
             }
         }
         self.blocks.push(block);
@@ -249,6 +265,25 @@ impl Store {
             .get(address)
             .map(|v| v.iter().rev().take(limit).copied().collect())
             .unwrap_or_default()
+    }
+
+    /// What a transaction did, if that is more than its body says.
+    pub fn outcome(&self, id: &Hash) -> Option<&Outcome> {
+        self.outcomes.get(id)
+    }
+
+    /// What each transaction of `block` did, in block order.
+    pub fn outcomes_for(&self, block: &Block) -> Vec<Outcome> {
+        block
+            .bodies
+            .iter()
+            .map(|body| {
+                self.outcomes
+                    .get(&body.id())
+                    .cloned()
+                    .unwrap_or(Outcome::Applied)
+            })
+            .collect()
     }
 
     /// Where a transaction was included.

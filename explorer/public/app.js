@@ -24,6 +24,7 @@ const state = {
   blocks: [],   // newest first, up to SPARK_BLOCKS
   pending: [],  // pending transactions seen live
   events: null,
+  assets: new Map(), // token or pool address -> { symbol, decimals, token?, pool? }
 };
 
 function storageGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
@@ -146,8 +147,90 @@ function schemePill(scheme) {
   const draft = scheme.includes("draft");
   return h("span", { class: draft ? "pill warn" : "pill info", title: draft ? "Post-quantum signature per the draft FIPS 206" : "FIPS 204 post-quantum signature" }, scheme);
 }
+function returned(tx) { return Boolean(tx.outcome && tx.outcome.result === "refunded"); }
 function statusPill(tx) {
-  return tx.height ? h("span", { class: "pill ok" }, "✓ Success") : h("span", { class: "pill warn" }, "◷ Pending");
+  if (!tx.height) return h("span", { class: "pill warn" }, "◷ Pending");
+  return returned(tx)
+    ? h("span", { class: "pill warn", title: REASONS[tx.outcome.reason] || tx.outcome.reason }, "↩ Returned")
+    : h("span", { class: "pill ok" }, "✓ Success");
+}
+
+// ---------------------------------------------------------------------------
+// Tokens and pools
+
+// Why a pool returned what it was sent. The transaction is still valid and
+// its fee is spent.
+const REASONS = {
+  no_pool: "There is no funded pool for this pair",
+  too_little_liquidity: "The first deposit into a pool was too small",
+  below_minimum: "The result was below the minimum the sender set",
+  nothing: "The amount was too small to give anything back",
+  out_of_range: "The amounts were out of range for this pool",
+};
+
+// Base units as a decimal string. BigInt: balances are 128-bit.
+function units(value, decimals) {
+  let digits;
+  try { digits = BigInt(value).toString(); } catch { return String(value); }
+  if (!decimals) return Number(digits) <= Number.MAX_SAFE_INTEGER ? num(digits) : digits;
+  digits = digits.padStart(decimals + 1, "0");
+  const frac = digits.slice(-decimals).replace(/0+$/, "");
+  return frac ? `${digits.slice(0, -decimals)}.${frac}` : digits.slice(0, -decimals);
+}
+// An asset is "stein" or the address of a token or pool.
+function asset(a) {
+  if (a === "stein") return { symbol: "STEIN", decimals: 9 };
+  return state.assets.get(a) || { symbol: short(a, 6, 4), decimals: 0 };
+}
+function qty(value, a) { const x = asset(a); return `${units(value, x.decimals)} ${x.symbol}`; }
+
+// Older nodes have neither endpoint: no tokens, no pools.
+async function loadAssets() {
+  const [tokens, pools] = await Promise.all([
+    api("/tokens?limit=100").catch(() => []),
+    api("/pools?limit=100").catch(() => []),
+  ]);
+  const assets = new Map();
+  for (const t of tokens) assets.set(t.address, { symbol: t.symbol, decimals: t.decimals, token: t });
+  for (const p of pools) assets.set(p.address, { symbol: `${p.symbol_a}/${p.symbol_b} shares`, decimals: 0, pool: p });
+  state.assets = assets;
+}
+
+// A transaction's method and what it moved, for lists and the detail page.
+function describe(t) {
+  const a = t.action || {};
+  const o = t.outcome || {};
+  switch (t.kind || "transfer") {
+    case "issue_token":
+      return { method: "Issue Token", value: `${units(a.supply, a.decimals)} ${a.symbol}`, other: "Token" };
+    case "transfer_token":
+      return { method: "Send Token", value: qty(a.amount, a.token), other: "To" };
+    case "add_liquidity":
+      return {
+        method: "Add Liquidity", other: "Pool",
+        value: o.result === "liquidity_added"
+          ? `${qty(o.used_a, a.asset_a)} + ${qty(o.used_b, a.asset_b)}`
+          : `${qty(a.amount_a, a.asset_a)} + ${qty(a.amount_b, a.asset_b)}`,
+      };
+    case "remove_liquidity": {
+      const pool = (state.assets.get(a.pool) || {}).pool;
+      return {
+        method: "Remove Liquidity", other: "Pool",
+        value: o.result === "liquidity_removed" && pool
+          ? `${qty(o.amount_a, pool.asset_a)} + ${qty(o.amount_b, pool.asset_b)}`
+          : `${units(a.shares, 0)} shares`,
+      };
+    }
+    case "swap":
+      return {
+        method: "Swap", other: "Pool",
+        value: o.result === "swapped"
+          ? `${qty(a.amount_in, a.asset_in)} → ${qty(o.amount_out, a.asset_out)}`
+          : `${qty(a.amount_in, a.asset_in)} → ${asset(a.asset_out).symbol}`,
+      };
+    default:
+      return { method: "Transfer", value: `${t.amount_stein} STEIN`, other: "To" };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -206,7 +289,10 @@ function connect() {
   es.addEventListener("pending", (m) => { const e = parse(m.data); if (e && e.type === "pending") onPending(e); });
 }
 
-function onBlock(block) {
+async function onBlock(block) {
+  if (state.blocks.some((b) => b.height === block.height)) return;
+  // A new token or pool: learn its name before showing the block.
+  if (block.txs.some((t) => t.kind === "issue_token" || t.kind === "add_liquidity")) await loadAssets();
   if (state.blocks.some((b) => b.height === block.height)) return;
   state.blocks.unshift(block);
   state.blocks.length = Math.min(state.blocks.length, SPARK_BLOCKS);
@@ -386,8 +472,8 @@ function renderLatestTxs(flash) {
         h("div", {}, h("div", {}, linkTx(t.id)), h("div", { class: "small muted" }, t.ts ? agoEl(t.ts) : statusPill(t)))),
       h("div", { class: "lr-mid" },
         h("div", {}, "From ", linkAddr(t.sender)),
-        h("div", {}, "To ", linkAddr(t.to))),
-      h("div", {}, h("span", { class: "amount-box" }, `${t.amount_stein} STEIN`)))));
+        h("div", {}, `${describe(t).other} `, linkAddr(t.to))),
+      h("div", {}, h("span", { class: "amount-box" }, describe(t).value)))));
 }
 
 // ---------------------------------------------------------------------------
@@ -403,13 +489,13 @@ function table(headers, rows) {
 function txRows(txs, { block = true } = {}) {
   return txs.map((t) => [
     linkTx(t.id),
-    h("span", { class: "method" }, "Transfer"),
+    h("span", { class: "method" }, describe(t).method),
     block ? (t.height ? linkBlock(t.height) : statusPill(t)) : null,
     t.ts ? agoEl(t.ts) : h("span", { class: "muted" }, "—"),
     linkAddr(t.sender),
     h("span", { class: "arrow", "aria-label": "to" }, "→"),
     linkAddr(t.to),
-    `${t.amount_stein} STEIN`,
+    returned(t) ? [h("span", { class: "muted" }, describe(t).value), " ", statusPill(t)] : describe(t).value,
     h("span", { class: "muted small" }, t.fee_stein),
     schemePill(t.scheme),
   ].filter((c) => c !== null));
@@ -536,19 +622,22 @@ async function renderTxPage(id) {
   const block = t.height ? await blockAt(t.height) : null;
   const tip = state.status ? state.status.height : t.height;
   const confirmations = t.height ? Math.max(1, tip - t.height + 1) : 0;
+  const d = describe(t);
+  const what = { To: "The recipient.", Token: "The token this transaction created.", Pool: "The liquidity pool this transaction went to." }[d.other];
   return [
     h("h1", { class: "page-title" }, "Transaction Details"),
     h("div", { class: "tabs" }, h("span", { class: "tab" }, "Overview")),
     h("section", { class: "card" }, detailRows([
       ["Transaction Hash", [h("span", { class: "mono" }, t.id), copyBtn(t.id)], "A unique identifier for this transaction: a hash of its body."],
-      ["Status", t.height ? h("span", { class: "pill ok" }, "✓ Success") : h("span", { class: "pill warn" }, "◷ Pending (updates live)"), "Whether the transaction is in a block."],
+      ["Status", t.height ? [statusPill(t), returned(t) ? h("span", { class: "muted small" }, `${REASONS[t.outcome.reason] || t.outcome.reason}: the pool returned what was sent, and the fee is spent`) : null] : h("span", { class: "pill warn" }, "◷ Pending (updates live)"), "Whether the transaction is in a block, and whether a pool carried it out."],
       ["Block", t.height ? [linkBlock(t.height), h("span", { class: "pill" }, `${num(confirmations)} Block Confirmation${confirmations === 1 ? "" : "s"}`)] : "—", "The block that includes this transaction."],
       ["Timestamp", block ? `◷ ${ago(block.timestamp_ms)} (${utc(block.timestamp_ms)})` : "—", "When the block was produced."],
       "sep",
       ["From", [linkAddr(t.sender, true), copyBtn(t.sender)], "The sender, who signed the transaction."],
-      ["To", [linkAddr(t.to, true), copyBtn(t.to)], "The recipient."],
+      [d.other, [linkAddr(t.to, true), copyBtn(t.to)], what],
       "sep",
-      ["Value", h("b", {}, `${t.amount_stein} STEIN`), "The amount transferred."],
+      ["Method", h("span", { class: "method" }, d.method), "What the transaction does."],
+      ["Value", h("b", {}, d.value), "What it moved. For a swap or a deposit that is in a block, what the pool actually took and paid."],
       ["Transaction Fee", `${t.fee_stein} STEIN`, "Paid per byte of the transaction: post-quantum signatures are large."],
       "sep",
       ["Signature", schemePill(t.scheme), "The post-quantum signature scheme that authorised this transaction."],
@@ -613,8 +702,13 @@ async function renderAddressPage(address) {
   const v = role.validator;
   const epoch = state.status ? state.status.epoch_blocks : null;
 
-  const title = isPool ? "Fee Pool" : v ? "Validator" : "Address";
-  const intro = isPool
+  const known = state.assets.get(address) || {};
+  const title = isPool ? "Fee Pool" : v ? "Validator" : known.token ? `Token ${known.token.symbol}` : known.pool ? "Liquidity Pool" : "Address";
+  const intro = known.token
+    ? `A token with a fixed supply of ${known.token.supply_formatted} ${known.token.symbol} (${known.token.decimals} decimal places), all of it credited to its issuer when it was created. No key controls this address, and nobody can create more.`
+    : known.pool
+    ? `Trades ${known.pool.symbol_a} for ${known.pool.symbol_b} at the ratio of its reserves, keeping ${known.pool.fee_per_mille / 10}% of what is paid in for its shareholders. No key controls this address; its balances are the pool's reserves.`
+    : isPool
     ? `System account. It collects every transaction fee and pays the balance to validators, by voting power, every ${num(epoch)} blocks.`
     : v ? `Active validator. It proposes and signs blocks; it does not send transactions. Its earnings arrive as fee-pool payouts${epoch ? ` every ${num(epoch)} blocks` : ""}, which are credits, not transactions.` : null;
 
@@ -624,7 +718,17 @@ async function renderAddressPage(address) {
   ];
   if (v) overview.push(h("div", { class: "k" }, "Earnings"), h("div", { class: "v" }, "Fee-pool payouts by voting power, credited at each epoch boundary"));
 
-  const info = v ? [
+  const holdings = account.holdings || [];
+  if (known.token) overview.push(
+    h("div", { class: "k" }, "Issuer"), h("div", { class: "v" }, linkAddr(known.token.issuer)),
+    h("div", { class: "k" }, "Total Supply"), h("div", { class: "v" }, `${known.token.supply_formatted} ${known.token.symbol}`));
+  if (known.pool) overview.push(
+    h("div", { class: "k" }, "Reserves"), h("div", { class: "v" }, `${known.pool.reserve_a_formatted} ${known.pool.symbol_a} : ${known.pool.reserve_b_formatted} ${known.pool.symbol_b}`),
+    h("div", { class: "k" }, "Shares"), h("div", { class: "v" }, units(known.pool.shares, 0)));
+
+  const info = known.token || known.pool ? [
+    h("div", { class: "k" }, "Kind"), h("div", { class: "v" }, h("span", { class: "pill info" }, known.token ? "Token" : "Liquidity pool"), h("span", { class: "muted small" }, "no key can control it")),
+  ] : v ? [
     h("div", { class: "k" }, "Role"), h("div", { class: "v" }, h("span", { class: "pill ok" }, "✓ Active validator")),
     h("div", { class: "k" }, "Consensus Key"), h("div", { class: "v" }, schemePill(v.scheme), h("span", { class: "muted small" }, "in the validator set since genesis")),
     h("div", { class: "k" }, "Voting Power"), h("div", { class: "v" }, `${num(v.power)} (${(v.share * 100).toFixed(2)}% of the set)`),
@@ -647,6 +751,14 @@ async function renderAddressPage(address) {
         table(["Block", "Age", "Txn", "Size", "Fees"], role.blocks.map((b) => [
           linkBlock(b.height), agoEl(b.timestamp_ms), h("a", { href: `#/block/${b.height}` }, String(b.tx_count)),
           b.size === null ? "—" : bytes(b.size), b.fees_stein === undefined ? "—" : `${b.fees_stein} STEIN`]))),
+      h("div", { class: "spacer" }));
+  }
+  if (holdings.length) {
+    sections.push(
+      h("div", { class: "tabs" }, h("span", { class: "tab" }, known.pool ? "Reserves and Locked Shares" : "Token Holdings")),
+      h("section", { class: "card" },
+        table(["Asset", "Address", "Balance"], holdings.map((x) => [
+          x.symbol, linkAddr(x.asset), h("b", {}, x.balance_formatted)]))),
       h("div", { class: "spacer" }));
   }
   sections.push(
@@ -704,6 +816,7 @@ async function switchNode(url) {
 async function loadInitial() {
   await refreshStatus();
   try {
+    await loadAssets();
     state.blocks = await api(`/blocks?limit=${SPARK_BLOCKS}`);
     state.pending = await api("/mempool?limit=50");
   } catch { /* the banner shows the problem */ }

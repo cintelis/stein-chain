@@ -1,6 +1,11 @@
 # Stein Chain — Protocol Specification
 
-*Version 0.2 (draft), 1 October 2026. Native token: **STEIN**.*
+*Version 0.3 (draft), 21 November 2026. Native token: **STEIN**.*
+
+Changes in 0.3:
+- tokens anyone can issue (§4.6) and liquidity pools that trade them (§4.7),
+  as native transaction types
+- the state root commits to tokens, holdings and pools (§5.4)
 
 Changes in 0.2:
 - algorithm-agile keys and signatures (§3.4)
@@ -34,6 +39,8 @@ question for the project owner.
    never reverted.
 
 Non-goals for v1: smart contracts (§12), privacy features, cross-chain bridges.
+Tokens and liquidity pools are built in as transaction types (§4.6, §4.7);
+they do not wait for contracts.
 
 ---
 
@@ -238,6 +245,132 @@ the proposer]
 1 STEIN = 10⁹ base units. Amounts are `u128`. All arithmetic is checked.
 Overflow rejects the transaction; it never wraps.
 
+### 4.6 Tokens [built]
+Anyone can issue a token. A token is a transaction type, not a contract: it
+costs a fee per byte like a transfer, and runs no code.
+
+```
+IssueToken    { symbol, decimals, supply }
+TransferToken { token, to, amount }
+```
+
+- **Address.** A token lives at
+  `BLAKE3-derive("stein token address v1", issuer ‖ nonce)`, where `nonce` is
+  the nonce of the transaction that issues it. The address is known before
+  the token exists, is unique because each nonce is spent once, needs no
+  global counter (SHARD-READY I-3), and is controlled by no key.
+- **Fixed supply.** `IssueToken` credits the whole `supply` to the issuer.
+  There is no mint, burn, freeze or owner afterwards: nobody, the issuer
+  included, can change a token once it exists.
+- **Supply below 2¹²⁷ base units**, like STEIN's, so a token credit can never
+  overflow (SHARD-READY I-1).
+- **Symbol:** 1 to 12 capital letters and digits, starting with a letter, and
+  not `STEIN`. **Symbols are not unique.** Two tokens may both call
+  themselves `USD`; only the address identifies a token, and wallets and
+  steinscan show it.
+- **Decimals:** 0 to 18, for display only.
+- **Holdings** are kept per holder: `(holder, token) → amount`, under the
+  holder's address (SHARD-READY I-4). A holder of none has no entry, and an
+  account can hold tokens without ever having held STEIN.
+- `TransferToken` debits the sender and credits the recipient. It is valid
+  exactly when the sender holds the amount and the fee.
+- The mempool admits a transaction only if its sender already holds what it
+  sends (§9.7). A token must therefore be in a block before it can be sent or
+  deposited: a wallet waits for the issue before the next step.
+
+Tests: `issuing_a_token_credits_its_whole_supply_to_the_issuer`,
+`tokens_move_between_accounts_and_cannot_be_overspent`,
+`malformed_asset_actions_are_refused_before_anything_else`.
+
+### 4.7 Liquidity pools [built]
+A pool holds two assets and trades one for the other at the ratio of its
+reserves (a constant-product market maker, as in Uniswap v2). An *asset* is
+STEIN or a token. Every pair of assets has exactly one pool, at
+`BLAKE3-derive("stein pool address v1", asset_a ‖ asset_b)` with the pair in
+canonical order: STEIN first, then tokens by address. No key controls a pool.
+
+```
+AddLiquidity    { asset_a, amount_a, asset_b, amount_b, min_shares }
+RemoveLiquidity { pool, shares, min_a, min_b }
+Swap            { asset_in, amount_in, asset_out, min_out }
+```
+
+**Reserves are balances.** A pool's reserves are the balances of its own
+address, so there is no second ledger to keep in step. Anything sent straight
+to a pool's address joins its reserves; a credit cannot be refused (I-1).
+
+**Shares.** A pool's shares are held like a token, under the pool's address,
+and can be sent with `TransferToken`.
+- The first deposit creates the pool and sets its price. It mints
+  `⌊√(amount_a × amount_b)⌋` shares, of which **1,000 are locked for good**,
+  held by the pool itself. A pool can therefore never be emptied back to zero
+  shares, and inflating one share's value to round a later depositor down to
+  nothing is made costly.
+- Later deposits are taken **at the pool's ratio**. The scarcer side sets
+  the shares (rounded down); each amount taken is rounded up, never above
+  what was offered; the rest is returned.
+- Shares redeem for the same fraction of each reserve, rounded down.
+
+**Swaps.** `out = ⌊net × reserve_out ÷ (reserve_in + net)⌋`, where
+`net = amount_in − ⌈amount_in × 3 ÷ 1000⌉`. The whole payment joins the
+reserves, so the **0.3% fee stays in the pool** and each share is worth more.
+The fee is a protocol constant. Every rounding favours the pool: the product
+of the reserves never falls in a swap.
+
+**Arithmetic.** Products of two 128-bit amounts are carried in 256 bits and
+divided back down (`stein-types` `math`): exact, with no floating point. The
+module is tested against vectors from arbitrary-precision arithmetic.
+
+**Two halves, and refunds.** A pool operation has a sender's half and a
+pool's half (SHARD-READY I-2):
+1. *Sender's half.* The nonce is checked, and the fee and everything the
+   transaction sends are debited. **This alone decides whether the
+   transaction is valid.**
+2. *Pool's half.* The pool computes the result. If it cannot carry the
+   operation out (no pool for the pair, less than `min_out` / `min_shares` /
+   `min_a` / `min_b`, an amount too small to give anything back), **it
+   returns what was sent**, as credits.
+
+A swap the pool cannot fill is therefore still a valid transaction: it is in
+the block, its nonce is spent and its fee is paid. What a pool does is never
+a condition of validity, so a transaction can be judged on its sender's state
+alone, and trying a trade against a moving price is not free. Today both
+halves run back to back in the same block; with sharding the pool's half
+becomes a receipt on the pool's shard (SHARD-READY §3.1).
+
+**Outcomes.** What a pool operation did (what it paid, or why it returned
+the payment) is not in the block: every node derives it by executing the
+block, and serves it with the transaction (`outcome` in `GET /tx/{id}`). It
+is committed through the state root. [planned: a receipts root in the block
+header, so a light client can be shown an outcome with a proof.]
+
+**What is not here:** no price oracle, no pool for more than two assets, no
+concentrated liquidity, and no multi-pool route in one transaction. Trading
+A for C through B is two transactions. As on any such market, the order of
+transactions in a block decides who gets which price; `min_out` is the
+trader's protection.
+
+Tests: `the_first_deposit_creates_the_pool_and_locks_the_minimum`,
+`a_swap_trades_at_the_pool_price_and_the_fee_stays_in_the_pool`,
+`a_swap_the_pool_cannot_fill_is_still_valid_and_returns_what_was_paid`,
+`later_deposits_take_the_pool_ratio_and_return_the_rest`,
+`shares_redeem_for_their_part_of_both_reserves`,
+`everything_is_conserved_across_a_long_mixed_history`, and
+`scripts/smoke-devnet.sh`.
+
+### 4.8 How these reached a running network
+There is no activation height yet (§12). The new transaction types were added
+so that a chain's earlier history is untouched:
+- `Transfer` keeps its encoding; the new actions are new variants after it.
+- The state root is unchanged while no token or pool exists (§5.4).
+
+A node with this software replays any earlier history to the same roots
+(test: `state_roots_from_before_tokens_are_unchanged`). A node without it
+stops at the first block that carries a new action, because it cannot decode
+it. **Every node must therefore be upgraded before the first such transaction
+is sent.** That is acceptable on a devnet run by one operator; a network with
+independent validators needs the activation rule first.
+
 ---
 
 ## 5. Blocks, execution and storage
@@ -298,6 +431,10 @@ Tests: `a_warm_signature_cache_never_vouches_for_different_bytes` and
 ### 5.4 State commitment
 - [built] A Merkle root over all accounts in address order, recomputed per
   block. This is O(n) and fine for the devnet.
+- [built] From the first token on, the root is
+  `BLAKE3-derive("stein state root v2", accounts ‖ tokens ‖ holdings ‖ pools)`:
+  the roots of four such trees. Until then it is the accounts root alone, as
+  it has been since genesis (§4.8).
 - [planned] A Jellyfish Merkle Tree (as in Aptos/Diem) updated incrementally,
   O(k log n) per block, with proofs for light clients.
 
@@ -431,7 +568,9 @@ These are placeholders. The project owner should set them, with legal advice.
 9. **[planned]** Fuzzing (cargo-fuzz) of every decoder: Borsh transaction,
    block, and genesis.
 10. **[planned]** Property tests: supply conservation across random transaction
-    sequences. [built: deterministic test]
+    sequences. [built: deterministic tests, for STEIN, every token and every
+    pool's shares across a mixed history of transfers, swaps, deposits and
+    withdrawals]
 11. **[planned]** Two independent external audits (protocol and cryptography
     integration) before mainnet. A bug bounty from testnet onward.
 12. **[planned]** Reproducible builds for validator binaries (Linux, built from
@@ -550,6 +689,7 @@ Cloudflare **does** fit the edges:
 | 1.2 | Follower nodes over HTTPS with PQ TLS; Docker validator plus Cloudflare follower | **done** |
 | 1.3 | FN-DSA test network (experimental) | **done**, superseded by 1.4 |
 | 1.4 | FN-DSA-512 accounts ahead of the final FIPS 206 (§3.5) | **done** |
+| 1.5 | Tokens and liquidity pools as native transaction types (§4.6, §4.7); `stein token` and `stein pool`; steinscan shows them | **done** |
 | 2 | Hardening: fuzzing, property tests, RocksDB storage (state on disk), JMT state **keyed by address nibbles**, RPC rate limits, archive offload to R2 | next |
 | 2.1 | Shard-readiness gaps ([SHARD-READY.md](SHARD-READY.md) §5): supply < 2¹²⁷, fee pool, `version` fields, `shard_id: 0` in RPC | **done** |
 | 3 | P2P: QUIC + PQ TLS, transaction gossip, **compact block propagation**, RPC-node role | |
@@ -601,6 +741,11 @@ the data an indexer starts from.
   signatures then never enter blocks, so validators and archives stop paying
   for them. This is the path past ~5,000 TPS, and the basis for validity
   rollups.
+- **An activation rule for upgrades:** a height at which new rules start, agreed
+  in advance, so validators run by different operators can upgrade without
+  stopping at each other's blocks (§4.8).
+- **A receipts root** in the block header, committing to what each
+  transaction did (§4.7).
 - **Smart contracts:** WebAssembly, decided. Design in
   [CONTRACTS.md](CONTRACTS.md): wasmtime with deterministic fuel metering, a
   Rust SDK, asynchronous calls between contracts (shard-ready), storage

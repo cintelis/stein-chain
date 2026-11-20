@@ -37,7 +37,8 @@ remembered in the browser.
 | `GET /blocks?before=&limit=` | recent blocks, block pages |
 | `GET /mempool` | pending transactions on load |
 | `GET /tx/{id}` | transaction page (pending or included) |
-| `GET /account/{address}`, `GET /account/{address}/txs` | address page |
+| `GET /account/{address}`, `GET /account/{address}/txs` | address page, with token holdings |
+| `GET /tokens`, `GET /pools` | names and decimal places of tokens and pools; a node without them shows transfers only |
 
 ## Next (SPEC §11.1)
 

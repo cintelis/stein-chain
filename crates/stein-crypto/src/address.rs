@@ -14,6 +14,8 @@ use crate::keys::PublicKey;
 const ADDRESS_CONTEXT: &str = "stein address v2";
 const CHECKSUM_CONTEXT: &str = "stein address checksum v1";
 const SYSTEM_CONTEXT: &str = "stein system account v1";
+const TOKEN_CONTEXT: &str = "stein token address v1";
+const POOL_CONTEXT: &str = "stein pool address v1";
 const PREFIX: &str = "st";
 const CHECKSUM_LEN: usize = 4;
 
@@ -34,6 +36,21 @@ impl Address {
     /// Derived in its own hash domain, so no key can ever control it.
     pub fn system(name: &str) -> Self {
         Self(hash(SYSTEM_CONTEXT, &[name.as_bytes()]).0)
+    }
+
+    /// The address of the token that `issuer` creates with its transaction
+    /// number `nonce`. Each account nonce is used once, so the address is
+    /// unique, known before the token exists, and needs no global counter
+    /// (SHARD-READY I-3). Its own hash domain: no key controls it.
+    pub fn token(issuer: &Self, nonce: u64) -> Self {
+        Self(hash(TOKEN_CONTEXT, &[&issuer.0, &nonce.to_le_bytes()]).0)
+    }
+
+    /// The address of the liquidity pool for a pair of assets, given their
+    /// canonical encodings in canonical order. One pool per pair. Its own
+    /// hash domain: no key controls it, so only the protocol moves its funds.
+    pub fn pool(asset_a: &[u8], asset_b: &[u8]) -> Self {
+        Self(hash(POOL_CONTEXT, &[asset_a, asset_b]).0)
     }
 
     fn checksum(&self) -> [u8; CHECKSUM_LEN] {

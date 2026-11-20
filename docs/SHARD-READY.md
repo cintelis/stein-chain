@@ -104,6 +104,40 @@ through asynchronous messages, not synchronous calls into other accounts' state.
 None of the gaps is costly. Closing them before **testnet genesis** costs a few
 hours. Closing them after mainnet would take hard forks.
 
+### 3.1 Review: tokens and liquidity pools (SPEC §4.6, §4.7)
+
+Five transaction types were added on 21 November 2026. Reviewed against every
+invariant:
+
+| Invariant | Tokens (`IssueToken`, `TransferToken`) | Pools (`AddLiquidity`, `RemoveLiquidity`, `Swap`) |
+|---|---|---|
+| I-1 | Compliant. A token's supply is fixed and below 2¹²⁷, so a token credit cannot overflow. Creating the token's record at its address has no precondition: the address is new, because the issuer's nonce is spent once. | Compliant. A pool pays out, and returns what it could not use, by credits. Shares in existence never exceed 2¹²⁸ − 1, checked when minted, so a holder's balance cannot overflow. |
+| I-2 | Compliant. Validity reads the sender's nonce, key, STEIN and token balance only. | Compliant, **by splitting the transaction in two.** The sender's half debits the fee and what is sent, and alone decides validity. The pool's half reads the pool, which is not the sender; so its result is never a condition of validity. When the pool cannot carry the operation out, it returns what was sent and the transaction stays valid and fee-paying. |
+| I-3 | Compliant. A token's address comes from the issuer's address and nonce; there is no global token counter. | Compliant. A pool's address comes from its pair of assets. |
+| I-4 | Compliant in layout: holdings are keyed `(holder, token)`, under the holder's address; a token's record is under the token's address. The JMT work (phase 2) must place both in the address's subtree. | Compliant in layout: a pool's reserves are the balances of its own address, and its record is under that address. |
+| I-5 | Compliant. | Compliant. |
+| I-6 | Compliant: fees go to the fee pool, in STEIN, as before. | Compliant. The swap fee stays in the pool's own reserves; it is not a credit to anyone. |
+| I-7 | New action variants; no format change. | Same. |
+| I-8 | RPC answers are per address (`/account`, `/token`, `/pool`). | Same. |
+
+**What sharding changes for pools.** Today the pool's half runs straight
+after the sender's half, in the same block. With shards it becomes a receipt:
+
+1. Block *h*, sender's shard: check the nonce, debit the fee and what is sent,
+   emit `Receipt { to: pool, operation, amounts, minimums, refund_to }`.
+2. Block *h+1*, pool's shard: run the pool's half. It ends in credits either
+   way: the proceeds, or the refund. Those credits are receipts back to the
+   sender's shard if it is a different one.
+
+The transaction format, its validity rule and its possible outcomes are the
+same in both models. What changes is only when the outcome is known: one block
+later. Wallets already treat a pool operation as "sent, then filled or
+returned".
+
+**The cost, stated plainly.** A trader pays the fee for a swap that is
+returned. That is the price of I-2, and it also means probing a pool's price
+with transactions that fail is never free.
+
 ---
 
 ## 4. What this costs and saves
@@ -131,4 +165,5 @@ hours. Closing them after mainnet would take hard forks.
 - [x] `version` field in block header and transaction body; unknown versions
       are refused (I-7)
 - [x] RPC exposes `shard_id: 0` in `/status` and block views (I-8)
-- [ ] New transaction types reviewed against I-1 and I-2 (standing rule)
+- [ ] New transaction types reviewed against I-1 and I-2 (standing rule).
+      Tokens and pools: reviewed, §3.1

@@ -31,10 +31,10 @@ consensus are not built yet (SPEC §11). Do not use this for real value.
 | Crate | What it does |
 |---|---|
 | `stein-crypto` | Scheme-tagged ML-DSA-44/65 and FN-DSA-512 keys and signatures, parallel batch verification, BLAKE3, Merkle trees, addresses, seed files |
-| `stein-types` | Transactions, blocks, genesis, chain parameters, amounts |
-| `stein-state` | Account state, key registry, signature and key caches, block building, full block verification and import |
+| `stein-types` | Transactions, blocks, genesis, chain parameters, amounts, tokens, pool pricing |
+| `stein-state` | Account state, tokens and liquidity pools, key registry, signature and key caches, block building, full block verification and import |
 | `stein-node` | Mempool, block producer, fsynced block log with re-verification on restart, JSON RPC |
-| `stein-cli` | `stein` wallet: keygen, balance, send |
+| `stein-cli` | `stein` wallet: keygen, balance, send, tokens, pools |
 
 ## Quick start
 
@@ -65,9 +65,36 @@ New keys are FN-DSA-512 (draft FIPS 206, SPEC §3.5). For an ML-DSA account:
 ./target/release/stein keygen --scheme ml-dsa-65 --out carol.seed
 ```
 
+### Tokens and pools
+
+Anyone can issue a token with a fixed supply, and fund a pool that trades it
+(SPEC §4.6, §4.7). An asset is `stein` or a token's address.
+
+```sh
+# Issue 1,000,000 GOLD. Prints the token's address.
+./target/release/stein token issue --key bob.seed --symbol GOLD --supply 1000000
+
+# Fund the STEIN/GOLD pool. The first deposit sets the price: 4,000 GOLD per STEIN.
+./target/release/stein pool add --key bob.seed --a stein --amount-a 100 --b <gold> --amount-b 400000
+
+# Trade through it, send the token, and take the liquidity back out.
+./target/release/stein pool swap --key carol.seed --sell stein --amount 10 --buy <gold>
+./target/release/stein token send --key carol.seed --token <gold> --to <bob-address> --amount 500
+./target/release/stein pool remove --key bob.seed --pool <pool-address> --shares all
+
+./target/release/stein token list
+./target/release/stein pool list
+```
+
+A swap names the least it will accept (the quote less `--slippage-bps`, 0.5%
+by default). If the price has moved past that when the block is built, the
+pool returns the payment: the transaction is still in the block and its fee
+is spent.
+
 RPC: `GET /status`, `GET /account/{address}`, `GET /account/{address}/txs`,
 `POST /tx {"raw": "<borsh hex>"}`, `GET /tx/{id}`, `GET /blocks`, `GET /mempool`,
-`GET /block/{height}[?witnesses=true]`, and `GET /events`, a live stream of
+`GET /block/{height}[?witnesses=true]`, `GET /tokens`, `GET /token/{address}`,
+`GET /pools`, `GET /pool/{address}`, and `GET /events`, a live stream of
 blocks and transactions (server-sent events).
 
 **steinscan**, the block explorer, watches it all in real time: see

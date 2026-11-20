@@ -3,7 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 use stein_crypto::{Address, Hash, Scheme};
-use stein_types::{Action, Block, Transaction, TxBody, Witness, format_amount};
+use stein_types::{Block, Outcome, Transaction, TxBody, Witness, format_amount};
+
+fn transfer() -> String {
+    "transfer".into()
+}
 
 /// One transaction, flattened for display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,12 +16,26 @@ pub struct TxView {
     pub id: Hash,
     /// Paying account.
     pub sender: Address,
-    /// Recipient.
+    /// What it does: `transfer`, `issue_token`, `transfer_token`,
+    /// `add_liquidity`, `remove_liquidity` or `swap`.
+    #[serde(default = "transfer")]
+    pub kind: String,
+    /// The other account it is about: the recipient, the token it creates,
+    /// or the pool.
     pub to: Address,
-    /// Amount in base units (string: u128 does not fit JSON numbers).
+    /// STEIN the sender sends, in base units (string: u128 does not fit JSON
+    /// numbers). Zero when only tokens move.
     pub amount: String,
-    /// Amount in STEIN.
+    /// The same in STEIN.
     pub amount_stein: String,
+    /// The action in full, as in the block.
+    #[serde(default)]
+    pub action: serde_json::Value,
+    /// What it did, once included, when that is more than the action says:
+    /// the token created, what a pool paid, or why a pool returned what it
+    /// was sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<Outcome>,
     /// Fee in base units (string).
     pub fee: String,
     /// Fee in STEIN.
@@ -39,9 +57,15 @@ pub struct TxView {
 }
 
 impl TxView {
-    /// A view of `body`, with what the witness tells if it is still held.
-    pub fn of(body: &TxBody, witness: Option<&Witness>, at: Option<(u64, u32)>) -> Self {
-        let Action::Transfer { to, amount } = &body.action;
+    /// A view of `body`, with what the witness tells if it is still held, and
+    /// what executing it did if it is in a block.
+    pub fn of(
+        body: &TxBody,
+        witness: Option<&Witness>,
+        at: Option<(u64, u32)>,
+        outcome: Option<&Outcome>,
+    ) -> Self {
+        let amount = body.action.stein_debit();
         let size = witness.map(|w| {
             Transaction {
                 body: body.clone(),
@@ -52,9 +76,12 @@ impl TxView {
         Self {
             id: body.id(),
             sender: body.sender,
-            to: *to,
+            kind: body.action.kind().into(),
+            to: body.action.counterparty(&body.sender, body.nonce),
             amount: amount.to_string(),
-            amount_stein: format_amount(*amount),
+            amount_stein: format_amount(amount),
+            action: serde_json::to_value(&body.action).unwrap_or_default(),
+            outcome: outcome.filter(|o| **o != Outcome::Applied).cloned(),
             fee: body.fee.to_string(),
             fee_stein: format_amount(body.fee),
             nonce: body.nonce,
@@ -69,7 +96,7 @@ impl TxView {
 
     /// A view of a transaction that is not yet in a block.
     pub fn pending(tx: &Transaction) -> Self {
-        Self::of(&tx.body, Some(&tx.witness), None)
+        Self::of(&tx.body, Some(&tx.witness), None, None)
     }
 }
 
@@ -103,8 +130,9 @@ pub struct BlockView {
 }
 
 impl BlockView {
-    /// A view of `block`.
-    pub fn of(block: &Block) -> Self {
+    /// A view of `block`. `outcomes` are what its transactions did, in block
+    /// order (see `Store::outcomes_for`).
+    pub fn of(block: &Block, outcomes: &[Outcome]) -> Self {
         let h = &block.header;
         let witnesses = block.witnesses.as_deref();
         let txs: Vec<TxView> = block
@@ -113,7 +141,7 @@ impl BlockView {
             .enumerate()
             .map(|(i, body)| {
                 let witness = witnesses.and_then(|w| w.get(i));
-                TxView::of(body, witness, Some((h.height, i as u32)))
+                TxView::of(body, witness, Some((h.height, i as u32)), outcomes.get(i))
             })
             .collect();
         let size = witnesses.map(|_| txs.iter().filter_map(|t| t.size).sum());

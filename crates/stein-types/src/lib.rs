@@ -3,12 +3,22 @@
 //! edge.
 
 mod amount;
+mod asset;
 mod block;
 mod genesis;
+pub mod math;
 mod params;
 mod tx;
 
-pub use amount::{AMOUNT_DECIMALS, Amount, AmountError, ONE_STEIN, format_amount, parse_amount};
+pub use amount::{
+    AMOUNT_DECIMALS, Amount, AmountError, ONE_STEIN, format_amount, format_units, parse_amount,
+    parse_units,
+};
+pub use asset::{
+    Asset, Deposit, MAX_SYMBOL_LEN, MAX_TOKEN_DECIMALS, MIN_LIQUIDITY, Outcome, Pool, PoolError,
+    SWAP_FEE_PER_MILLE, Token, decimals_of, deposit, first_shares, pool_address, swap_output,
+    valid_symbol, withdrawal,
+};
 pub use block::{Block, BlockHeader, Witness};
 pub use genesis::{Allocation, Genesis, GenesisError, GenesisValidator};
 pub use params::ChainParams;
