@@ -72,7 +72,7 @@ ceiling of one node's CPU, not network throughput (see §10).
 | ML-DSA-65 | 3,432 B | baseline in v0.1 |
 | **ML-DSA-44** | **2,543 B (−26%)** | **adopted as devnet default** |
 | zstd level 19 on whole transactions | −2.7% | **rejected**: signatures are random and compress to 99.9% |
-| FN-DSA-512 (Falcon), draft FIPS 206, `fn-dsa` 0.4.0 | **789 B (−69% vs ML-DSA-44)**; verify ~66,000 /s per core; block import ~75,600 tx/s cold, ~111,300 warm | **opt-in, FN-DSA test network only** (§3.5). Not a mainnet candidate until FIPS 206 is final: the implementation warns that keys and signatures may stop being accepted by later versions. |
+| FN-DSA-512 (Falcon), draft FIPS 206, `fn-dsa` 0.4.0 | **789 B (−69% vs ML-DSA-44)**; verify ~66,000 /s per core; block import ~75,600 tx/s cold, ~111,300 warm | **adopted for accounts, opt-in per account** (§3.5), ahead of the final FIPS 206. ML-DSA-44 stays the default for new keys. |
 | STARK aggregation of all signatures in a block | ~120 B + amortised proof | research (§12) |
 
 ---
@@ -81,11 +81,11 @@ ceiling of one node's CPU, not network throughput (see §10).
 
 | Use | Primitive | Notes |
 |---|---|---|
-| Transaction signatures | **ML-DSA-44** (FIPS 204, NIST cat. 2) by default; ML-DSA-65 (cat. 3) also accepted | 44: pk 1,312 B, sig 2,420 B. 65: pk 1,952 B, sig 3,309 B |
+| Transaction signatures | **ML-DSA-44** (FIPS 204, NIST cat. 2) by default; ML-DSA-65 (cat. 3) also accepted; **FN-DSA-512** (draft FIPS 206, cat. 1) by account opt-in (§3.5) | 44: pk 1,312 B, sig 2,420 B. 65: pk 1,952 B, sig 3,309 B. FN-DSA-512: pk 897 B, sig 666 B |
 | Validator proposals and votes | ML-DSA-44 or ML-DSA-65 (devnet default 44) | [decision: require ML-DSA-65 for mainnet validators] |
 | Hashing | **BLAKE3**, derive-key mode | Every use has its own context string |
 | P2P key exchange | **X25519MLKEM768** hybrid, or pure ML-KEM-768/1024 | via rustls on AWS-LC [planned] |
-| Implementation | **AWS-LC** (`aws-lc-rs`) | FIPS 140-3 validation track; same stack as Sigilant |
+| Implementation | **AWS-LC** (`aws-lc-rs`) for ML-DSA and TLS; `fn-dsa` 0.4.0 for FN-DSA | AWS-LC: FIPS 140-3 validation track; same stack as Sigilant. `fn-dsa`: outside any validation (§3.5) |
 
 ### 3.1 Domain separation
 - **Signatures:** the signed message is `"STEIN-SIG-v1" ‖ domain ‖ payload`.
@@ -101,11 +101,11 @@ ceiling of one node's CPU, not network throughput (see §10).
   every signature. This resists fault and side-channel attacks. As a result,
   the same body has many valid signatures, so **no on-chain identifier may
   cover a signature** (§4.2).
-- **FN-DSA (Falcon) is not used yet.** It gives about 3× smaller transactions
-  than ML-DSA-44 and 6–7× faster verification (§2.2). But FIPS 206 is
-  unpublished, and signing uses Gaussian sampling, which is hard to make
-  constant-time. Plan: enable FN-DSA-512 for **user accounts** once FIPS 206 is
-  final and a stable 1.0 implementation exists. Keep ML-DSA for validators.
+- **FN-DSA (Falcon) is accepted for user accounts**, ahead of the final
+  FIPS 206 (§3.5). It gives about 3× smaller transactions than ML-DSA-44 and
+  6–7× faster verification (§2.2). Its signing uses Gaussian sampling, which is
+  hard to make constant-time, so it is opt-in per account and **validators
+  stay on ML-DSA**.
 
 ### 3.3 Why BLAKE3 and not SHA-256
 Grover's algorithm affects all 256-bit hashes equally (~128-bit preimage
@@ -119,15 +119,15 @@ Every public key and signature carries a one-byte **scheme tag**:
 |---|---|---|
 | 1 | ML-DSA-44 | accepted; default for new keys |
 | 2 | ML-DSA-65 | accepted |
-| 3 | FN-DSA-512, draft FIPS 206 (`fn-dsa-512-draft`) | **experimental**: exists only in builds with the `fn-dsa-experimental` feature, accepted only on the FN-DSA test network (§3.5); does not decode in standard builds |
-| 4–255 | — | unassigned |
+| 3 | FN-DSA-512, draft FIPS 206 (`fn-dsa-512-draft`) | accepted for accounts where genesis lists it (the default); never for validators (§3.5). Means this draft for good |
+| 4–255 | — | unassigned. The final FIPS 206 will take a new tag |
 
 - Wire form: `tag ‖ bytes`, with the byte length fixed by the tag. There is no
   length prefix, so each value has exactly one encoding.
 - Which schemes are accepted is a **chain parameter**: `tx_schemes` for
   accounts and `validator_schemes` for validators, both in genesis. Adding
-  FN-DSA later is a parameter change and a software upgrade, not a format
-  change.
+  a scheme later (the final FIPS 206) is a parameter change and a software
+  upgrade, not a format change.
 - A key only verifies signatures of its own scheme. The address commits to the
   tag (§4.1), so one key can never control accounts under two schemes.
 - Accounts on different schemes interoperate freely (test:
@@ -137,41 +137,42 @@ Every public key and signature carries a one-byte **scheme tag**:
   general use. Category 3 (ML-DSA-65) remains available for accounts holding
   large balances.
 
-### 3.5 FN-DSA test network (experimental) [built]
-A **separate network** to measure FN-DSA before its standard is final. It
-never becomes mainnet.
+### 3.5 FN-DSA-512 accounts, ahead of the final standard [built]
+Accounts may use **FN-DSA-512 per the draft FIPS 206** (scheme tag 3,
+`fn-dsa-512-draft`). The decision: the gain is worth taking now and should not
+wait for a publication date nobody controls. Transfers are 789 bytes instead of
+2,543 (1,687 with key registration), verification is ~6.5× faster than
+ML-DSA-44, and block import about 2× faster (§2.2).
 
-**Opting in takes three explicit steps:**
+**How an account uses it:** `stein keygen --scheme fn-dsa-512-draft`. Nothing
+else changes. ML-DSA-44 remains the default for new keys, and accounts on
+different schemes transfer freely.
 
-| Step | What it means |
+**Which networks accept it:** those whose genesis lists tag 3 in `tx_schemes`.
+`stein-node init` lists it by default; `init --ml-dsa-only` leaves it out. A
+network that started without it (a genesis written before this change) does not
+accept it: `tx_schemes` is fixed at genesis.
+
+**What adopting a draft costs, and the rule that contains each cost:**
+
+| Cost | Rule |
 |---|---|
-| 1. Build with `--features stein-crypto/fn-dsa-experimental` | Standard builds contain no FN-DSA code: `fn-dsa-512-draft` does not parse and tag 3 does not decode. |
-| 2. `stein-node init --enable-fn-dsa` | Creates a genesis whose `tx_schemes` include tag 3. Defaults to chain id **31338**, separate from the standard devnet's 31337. |
-| 3. Choose an FN-DSA key: `stein keygen --scheme fn-dsa-512-draft` | Accounts opt in one by one. ML-DSA accounts on the same network keep working, and the two kinds transfer freely. |
+| FIPS 206 is unpublished and may still change. The `fn-dsa` crate warns that later versions may reject keys and signatures made now. | **Tag 3 means this draft for good.** `fn-dsa` is pinned to exactly 0.4.0 and is never upgraded in place, so the chain can always replay its own history. The final standard gets a **new tag** beside this one. |
+| The final standard may differ, leaving tag 3 accounts on a scheme no other software speaks. | Tag 3 accounts keep working. To move, an account transfers its balance to an account under another scheme; `RotateKey` (§4.3, planned) will make that in-place. |
+| `fn-dsa` is a second signature implementation, outside any FIPS validation, and its Gaussian sampling is hard to make constant-time. | **Validators never use FN-DSA.** Genesis validation rejects a draft scheme in `validator_schemes` (`DraftValidatorScheme`). A flaw in FN-DSA could cost the accounts that chose it, never consensus. |
+| Two draft implementations could disagree about which signatures verify: a consensus split. | **One implementation.** `scripts/check-crypto-policy.sh` requires `fn-dsa` at exactly 0.4.0, used by `stein-crypto` alone, and refuses any other FN-DSA or Falcon crate. |
+| FN-DSA-512 is NIST category 1, below ML-DSA-44 (category 2). | Opt-in per account. Accounts holding large balances should prefer ML-DSA-65. |
 
-**Fences:**
-- **Validators never use FN-DSA.** Genesis validation rejects an experimental
-  scheme in `validator_schemes` (`ExperimentalValidatorScheme`).
-- **A standard node cannot join.** Its genesis does not parse, because the
-  scheme name is unknown to it.
-- **One implementation, pinned exactly** (`fn-dsa = "=0.4.0"`): two draft
-  implementations could disagree about which signatures verify.
-  `scripts/check-crypto-policy.sh` allows `fn-dsa` only in the experimental
-  build, at that version, and used by `stein-crypto` alone.
+Also:
 - The name **`-draft`** appears in key files, JSON and the CLI, so no one
   mistakes these keys for final-standard FN-DSA.
 - **Keys from seeds:** `fn-dsa` has no seed-to-key function, so a key is
   generated deterministically from the 32-byte seed through a BLAKE3 XOF.
   These seed files are Stein-specific, not portable to other FN-DSA wallets.
-- **Network lifetime:** if FIPS 206 changes the algorithm or encodings, this
-  network is reset, not migrated.
-
-**Measured** (§2.2): transfers of 789 bytes (1,687 with key registration),
-verification ~6.5× faster than ML-DSA-44, and block import about 2× faster.
 
 Tests: `fn_dsa_draft_keys_sign_and_verify`, `fn_dsa_and_ml_dsa_never_cross`,
-`fn_dsa_accounts_work_on_the_test_network_only`, `a_standard_build_has_no_fn_dsa`,
-`scripts/smoke-fn-dsa.sh` (CI job *FN-DSA test network*).
+`fn_dsa_accounts_work_where_genesis_lists_the_scheme`,
+`scripts/smoke-fn-dsa.sh` (in CI on Linux, Windows and macOS).
 
 ---
 
@@ -464,8 +465,8 @@ only after measuring a real multi-region testnet.
 | Real-world TPS | ~15–30 | ~1,000–4,000 user TPS (plus votes) | 2,000 capacity at launch |
 | Block / slot time | 12 s | 0.4 s | 1 s |
 | Finality | ~13 min (2 epochs) | ~1–2 s optimistic, ~13 s rooted | ~2 s, deterministic |
-| Signature size | 65 B (ECDSA) | 64 B (Ed25519) | 2,420 B (ML-DSA-44); ~666 B with FN-DSA later |
-| Typical transfer size | ~110 B | ~250 B | 2,543 B; ~788 B with FN-DSA |
+| Signature size | 65 B (ECDSA) | 64 B (Ed25519) | 2,420 B (ML-DSA-44); 666 B (FN-DSA-512) |
+| Typical transfer size | ~110 B | ~250 B | 2,543 B (ML-DSA-44); 789 B (FN-DSA-512) |
 | Quantum-safe signatures | No | No | **Yes** |
 | Validators | ~1M (BLS aggregation) | ~1,000–1,500 | ≤100 active + delegation |
 
@@ -545,7 +546,8 @@ Cloudflare **does** fit the edges:
 | 1 | Single-node devnet: crypto, transactions, state, block log, RPC, CLI wallet | **done** |
 | 1.1 | Algorithm-agile keys, ML-DSA-44 default, verification cache, 6 h retention, bounded key cache | **done** |
 | 1.2 | Follower nodes over HTTPS with PQ TLS; Docker validator plus Cloudflare follower | **done** |
-| 1.3 | FN-DSA test network (experimental, §3.5) | **done** |
+| 1.3 | FN-DSA test network (experimental) | **done**, superseded by 1.4 |
+| 1.4 | FN-DSA-512 accounts ahead of the final FIPS 206 (§3.5) | **done** |
 | 2 | Hardening: fuzzing, property tests, RocksDB storage (state on disk), JMT state **keyed by address nibbles**, RPC rate limits, archive offload to R2 | next |
 | 2.1 | Shard-readiness gaps ([SHARD-READY.md](SHARD-READY.md) §5): supply < 2¹²⁷, fee pool, `version` fields, `shard_id: 0` in RPC | **done** |
 | 3 | P2P: QUIC + PQ TLS, transaction gossip, **compact block propagation**, RPC-node role | |
@@ -561,7 +563,7 @@ targeted at **99.999%**, about 5 minutes of stalled finality per year. That
 can only be demonstrated by running a decentralised testnet and then mainnet
 over time, not by testing alone.
 | C0–C4 | WASM smart contracts: design, VM and receipts, SDK and standards, audit (see [CONTRACTS.md](CONTRACTS.md) §14) | design written |
-| later | FN-DSA-512 accounts, STARK signature aggregation, light clients | |
+| later | Final FIPS 206 as a new scheme tag, `RotateKey`, STARK signature aggregation, light clients | |
 
 ### 11.1 steinscan (block explorer) [built: live explorer; planned: indexer]
 **Built:** `explorer/`, a static app that reads a node's RPC and follows its
@@ -587,9 +589,11 @@ the data an indexer starts from.
 ---
 
 ## 12. Future work
-- **FN-DSA-512 for accounts:** once FIPS 206 is final and an implementation
-  reaches 1.0. This means adding tag 3 to `tx_schemes` and letting accounts
-  rotate to it. Expected: ~788-byte transfers (−69% vs ML-DSA-44).
+- **Final FIPS 206:** when it is published and an implementation reaches 1.0,
+  add it as a new scheme tag beside tag 3 (§3.5) and let accounts rotate to
+  it. Adding a scheme to a running network needs an upgrade rule (an
+  activation height), which does not exist yet: `tx_schemes` is fixed at
+  genesis.
 - **STARK signature aggregation:** a block proposer proves "all N signatures
   verify" in one hash-based (post-quantum) proof of ~100–200 KB. Individual
   signatures then never enter blocks, so validators and archives stop paying

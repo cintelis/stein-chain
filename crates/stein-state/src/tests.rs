@@ -524,21 +524,17 @@ fn accounts_on_different_schemes_share_a_block() {
     assert_eq!(follower.state_root(), leader.state_root());
 }
 
-/// FN-DSA test network (SPEC §3.5). Runs only in builds with
-/// `stein-crypto/fn-dsa-experimental`; a standard build has no such scheme.
+/// FN-DSA-512 per the draft FIPS 206 (SPEC §3.5): accepted for accounts where
+/// genesis lists it, never for validators.
 #[test]
-fn fn_dsa_accounts_work_on_the_test_network_only() {
-    let Some(fn_dsa) = stein_crypto::Scheme::fn_dsa_draft() else {
-        return;
-    };
+fn fn_dsa_accounts_work_where_genesis_lists_the_scheme() {
+    let fn_dsa = stein_crypto::Scheme::FnDsa512Draft;
     let n = net();
     let frank = SecretKey::from_seed(fn_dsa, &[6; 32]).expect("key");
 
-    let mut test_net = n.genesis.clone();
-    test_net.params.tx_schemes.push(fn_dsa);
-    assert!(test_net.is_experimental() && !n.genesis.is_experimental());
-    let mut leader = State::from_genesis(&test_net).expect("genesis");
-    let mut follower = State::from_genesis(&test_net).expect("genesis");
+    assert!(n.genesis.params.tx_schemes.contains(&fn_dsa), "default");
+    let mut leader = State::from_genesis(&n.genesis).expect("genesis");
+    let mut follower = State::from_genesis(&n.genesis).expect("genesis");
 
     let (b1, _) = produce(
         &mut leader,
@@ -556,18 +552,20 @@ fn fn_dsa_accounts_work_on_the_test_network_only() {
     assert_eq!(follower.state_root(), leader.state_root());
     assert_eq!(leader.account(&frank.address()).expect("frank").nonce, 2);
 
-    // The same transaction on a standard network is refused at the door.
-    let standard = State::from_genesis(&n.genesis).expect("genesis");
+    // The same transaction on an ML-DSA-only network is refused at the door.
+    let mut ml_dsa_only = n.genesis.clone();
+    ml_dsa_only.params.tx_schemes.retain(|s| !s.is_draft());
+    let standard = State::from_genesis(&ml_dsa_only).expect("genesis");
     assert_eq!(
         standard.check_transaction(&first, None),
         Err(TxError::UnsupportedScheme)
     );
 
-    // And no genesis may give validators an experimental scheme.
-    let mut bad = test_net.clone();
+    // And no genesis may give validators a draft-standard scheme.
+    let mut bad = n.genesis.clone();
     bad.params.validator_schemes.push(fn_dsa);
     assert!(matches!(
         State::from_genesis(&bad),
-        Err(GenesisError::ExperimentalValidatorScheme(_))
+        Err(GenesisError::DraftValidatorScheme(_))
     ));
 }

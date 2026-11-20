@@ -65,7 +65,7 @@ strip = true
 [profile.dev.package.blake3]
 opt-level = 3
 
-# FN-DSA (experimental feature only): key generation keeps large buffers on
+# FN-DSA: key generation keeps large buffers on
 # the stack, which unoptimised code can overflow.
 [profile.dev.package.fn-dsa-kgen]
 opt-level = 3

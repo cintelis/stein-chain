@@ -4,10 +4,9 @@ A post-quantum layer-1 blockchain. Native token: **STEIN**.
 
 - **ML-DSA** (FIPS 204) signatures via AWS-LC: **ML-DSA-44** by default
   (2,543-byte transfers), ML-DSA-65 accepted. Keys and signatures carry a scheme
-  tag, so FN-DSA can be added when FIPS 206 is final.
-- **FN-DSA test network** (opt-in, experimental): a separate chain where accounts
-  may use FN-DSA-512 per the draft FIPS 206, giving 789-byte transfers. It needs
-  an explicit build feature and `init --enable-fn-dsa`; see SPEC §3.5.
+  tag, so schemes can be added without a format change.
+- **FN-DSA-512** (draft FIPS 206) for accounts that opt in: 789-byte transfers.
+  Adopted ahead of the final standard; validators stay on ML-DSA. See SPEC §3.5.
 - **BLAKE3** hashing with a domain-separation context for every use.
 - Account model with **one-time public-key registration** (−34% bytes per transfer).
 - **Signature verification cache**: each signature is verified once per node,
@@ -56,12 +55,9 @@ cargo build --release
 ./target/release/stein status
 ```
 
-FN-DSA test network (experimental, never mainnet):
+An FN-DSA account (draft FIPS 206, SPEC §3.5), on a network created by this version:
 
 ```sh
-cargo build --release --features stein-crypto/fn-dsa-experimental
-./target/release/stein-node --data-dir .stein-fn init --enable-fn-dsa --scheme fn-dsa-512-draft
-./target/release/stein-node --data-dir .stein-fn run --rpc 127.0.0.1:8655
 ./target/release/stein keygen --scheme fn-dsa-512-draft --out frank.seed
 ```
 

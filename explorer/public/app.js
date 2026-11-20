@@ -13,7 +13,6 @@ const NETWORKS = [
   { name: "Devnet validator (rpc.steinchain.com)", url: "https://rpc.steinchain.com" },
   { name: "Local validator :8645", url: "http://127.0.0.1:8645" },
   { name: "Local follower :8646", url: "http://127.0.0.1:8646" },
-  { name: "FN-DSA test network :8655", url: "http://127.0.0.1:8655" },
 ];
 const HOME_ROWS = 6;      // rows in the home page lists
 const SPARK_BLOCKS = 50;  // blocks in the overview chart
@@ -139,8 +138,8 @@ function copyBtn(text) {
 }
 function schemePill(scheme) {
   if (!scheme) return h("span", { class: "pill", title: "Signature pruned after finality" }, "pruned");
-  const experimental = scheme.includes("draft");
-  return h("span", { class: experimental ? "pill warn" : "pill info", title: experimental ? "Experimental: draft FIPS 206" : "FIPS 204 post-quantum signature" }, scheme);
+  const draft = scheme.includes("draft");
+  return h("span", { class: draft ? "pill warn" : "pill info", title: draft ? "Post-quantum signature per the draft FIPS 206" : "FIPS 204 post-quantum signature" }, scheme);
 }
 function statusPill(tx) {
   return tx.height ? h("span", { class: "pill ok" }, "✓ Success") : h("span", { class: "pill warn" }, "◷ Pending");
@@ -170,9 +169,7 @@ async function refreshStatus() {
   try {
     state.status = await api("/status");
     const s = state.status;
-    const experimental = (s.tx_schemes || []).some((x) => x.includes("draft"));
     if (s.sync_error) banner(`This follower stopped following: ${s.sync_error}`, true);
-    else if (experimental) banner("FN-DSA TEST NETWORK: experimental draft-standard signatures. Never mainnet.");
     else banner("");
     const fee = Number(s.min_fee_per_byte || 0);
     $("strip-info").replaceChildren(
@@ -284,7 +281,7 @@ function renderHome(app) {
       h("h1", {}, "The Stein Chain Explorer"),
       heroSearch(),
       h("div", { class: "hero-note" }, "Post-quantum: every signature is ",
-        h("span", { class: "chip" }, "ML-DSA · FIPS 204"), " and every block is re-verified by every node."))),
+        h("span", { class: "chip" }, "ML-DSA · FIPS 204"), " or ", h("span", { class: "chip" }, "FN-DSA · draft FIPS 206"), ", and every block is re-verified by every node."))),
     h("div", { class: "wrap overlap" },
       h("section", { id: "overview", class: "card overview" }),
       h("div", { class: "two" },

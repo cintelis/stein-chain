@@ -1,17 +1,18 @@
-//! FN-DSA-512 (Falcon), per the **draft** of FIPS 206. EXPERIMENTAL.
+//! FN-DSA-512 (Falcon), per the **draft** of FIPS 206: scheme tag 3.
 //!
-//! Compiled only with the `fn-dsa-experimental` feature, and accepted only on
-//! a network whose genesis lists `fn-dsa-512-draft` in `tx_schemes` (the
-//! FN-DSA test network, SPEC §3.5). Standard builds contain none of this, and
-//! scripts/check-crypto-policy.sh fails if they ever do.
+//! Adopted before the standard is final (SPEC §3.5), for account keys only.
+//! Accepted on a network whose genesis lists `fn-dsa-512-draft` in
+//! `tx_schemes`; never in `validator_schemes`.
 //!
-//! Why it is fenced off:
+//! What adopting a draft costs, and how each cost is contained:
 //! * FIPS 206 is unpublished. The `fn-dsa` crate (0.4) implements a best guess
 //!   at the draft and warns that keys and signatures may stop being accepted by
-//!   later versions. A chain that accepted them could not replay its own
-//!   history after an upgrade.
+//!   later versions. So the crate is pinned to exactly 0.4.0 and tag 3 means
+//!   this draft for good: the chain must always be able to replay its own
+//!   history. The final standard gets a new tag.
 //! * It is a second signature implementation beside AWS-LC, outside any FIPS
-//!   validation.
+//!   validation. Validators therefore stay on ML-DSA: a break of this scheme
+//!   could cost the accounts that chose it, never consensus.
 //! * Signing samples a discrete Gaussian, which is hard to make constant-time;
 //!   wallets sign, and a leaked key is stolen funds.
 //!

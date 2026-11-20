@@ -1,7 +1,7 @@
 //! Post-quantum keys and signatures, algorithm-agile by design.
 //!
 //! Every public key and signature carries a [`Scheme`] tag, so the chain can
-//! adopt new schemes (FN-DSA once FIPS 206 is final) without a format change.
+//! adopt new schemes (the final FIPS 206, when published) without a format change.
 //! Only schemes listed in [`Scheme`] exist in the code; a tag for anything
 //! else fails to decode.
 //!
@@ -34,9 +34,9 @@ const SIGNING_PREFIX: &[u8; 12] = b"STEIN-SIG-v1";
 
 /// A signature scheme. The discriminant is the on-chain tag (SPEC §3.4).
 ///
-/// Tag 3 is FN-DSA-512 per the **draft** FIPS 206. It exists only in builds
-/// with the `fn-dsa-experimental` feature, for the FN-DSA test network
-/// (SPEC §3.5); in every other build tag 3 does not decode.
+/// Tag 3 is FN-DSA-512 per the **draft** FIPS 206 (SPEC §3.5). It is for
+/// account keys only, on networks whose genesis lists it; validators never use
+/// it. Tag 3 means this draft for good: the final standard gets a new tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(u8)]
 pub enum Scheme {
@@ -45,39 +45,20 @@ pub enum Scheme {
     MlDsa44 = 1,
     /// ML-DSA-65 (FIPS 204), NIST category 3.
     MlDsa65 = 2,
-    /// FN-DSA-512 (Falcon), draft FIPS 206, NIST category 1. EXPERIMENTAL:
-    /// test network only, never mainnet.
-    #[cfg(feature = "fn-dsa-experimental")]
+    /// FN-DSA-512 (Falcon), draft FIPS 206, NIST category 1. Account keys
+    /// only, never validators.
     FnDsa512Draft = 3,
 }
 
 impl Scheme {
-    /// Every scheme this build supports.
-    #[cfg(not(feature = "fn-dsa-experimental"))]
-    pub const ALL: [Scheme; 2] = [Scheme::MlDsa44, Scheme::MlDsa65];
-    /// Every scheme this build supports.
-    #[cfg(feature = "fn-dsa-experimental")]
+    /// Every scheme the chain knows.
     pub const ALL: [Scheme; 3] = [Scheme::MlDsa44, Scheme::MlDsa65, Scheme::FnDsa512Draft];
 
-    /// FN-DSA-512 (draft FIPS 206) if this build includes it, else `None`.
-    /// Lets the rest of the workspace offer the FN-DSA test network without
-    /// feature flags of its own: a standard build simply has no such scheme.
-    pub const fn fn_dsa_draft() -> Option<Scheme> {
-        #[cfg(feature = "fn-dsa-experimental")]
-        {
-            Some(Scheme::FnDsa512Draft)
-        }
-        #[cfg(not(feature = "fn-dsa-experimental"))]
-        {
-            None
-        }
-    }
-
-    /// Whether the scheme is experimental: never acceptable for mainnet.
-    pub const fn is_experimental(self) -> bool {
+    /// Whether the scheme follows a draft standard, not a final one. Such a
+    /// scheme is for account keys only: validators never use it.
+    pub const fn is_draft(self) -> bool {
         match self {
             Self::MlDsa44 | Self::MlDsa65 => false,
-            #[cfg(feature = "fn-dsa-experimental")]
             Self::FnDsa512Draft => true,
         }
     }
@@ -97,7 +78,6 @@ impl Scheme {
         match self {
             Self::MlDsa44 => "ml-dsa-44",
             Self::MlDsa65 => "ml-dsa-65",
-            #[cfg(feature = "fn-dsa-experimental")]
             Self::FnDsa512Draft => "fn-dsa-512-draft",
         }
     }
@@ -107,7 +87,6 @@ impl Scheme {
         match self {
             Self::MlDsa44 => 1312,
             Self::MlDsa65 => 1952,
-            #[cfg(feature = "fn-dsa-experimental")]
             Self::FnDsa512Draft => crate::fn_dsa_draft::PUBLIC_KEY_LEN,
         }
     }
@@ -117,7 +96,6 @@ impl Scheme {
         match self {
             Self::MlDsa44 => 2420,
             Self::MlDsa65 => 3309,
-            #[cfg(feature = "fn-dsa-experimental")]
             Self::FnDsa512Draft => crate::fn_dsa_draft::SIGNATURE_LEN,
         }
     }
@@ -132,7 +110,6 @@ impl Scheme {
         match self {
             Self::MlDsa44 => Some((&ML_DSA_44_SIGNING, &ML_DSA_44)),
             Self::MlDsa65 => Some((&ML_DSA_65_SIGNING, &ML_DSA_65)),
-            #[cfg(feature = "fn-dsa-experimental")]
             Self::FnDsa512Draft => None,
         }
     }
@@ -360,7 +337,6 @@ pub struct VerifyingKey {
 #[derive(Clone)]
 enum Parsed {
     AwsLc(Arc<ParsedPublicKey>),
-    #[cfg(feature = "fn-dsa-experimental")]
     FnDsa(crate::fn_dsa_draft::SharedVerifier),
 }
 
@@ -371,12 +347,9 @@ impl VerifyingKey {
             Some((_, verification)) => Parsed::AwsLc(Arc::new(
                 ParsedPublicKey::new(verification, key.as_bytes()).map_err(|_| KeyError::Crypto)?,
             )),
-            #[cfg(feature = "fn-dsa-experimental")]
             None => Parsed::FnDsa(Arc::new(crate::fn_dsa_draft::Verifier::new(
                 key.as_bytes(),
             )?)),
-            #[cfg(not(feature = "fn-dsa-experimental"))]
-            None => return Err(KeyError::UnsupportedScheme),
         };
         Ok(Self {
             parsed,
@@ -409,7 +382,6 @@ impl VerifyingKey {
         let message = signing_message(domain, payload);
         let ok = match &self.parsed {
             Parsed::AwsLc(key) => key.verify_sig(&message, signature.as_bytes()).is_ok(),
-            #[cfg(feature = "fn-dsa-experimental")]
             Parsed::FnDsa(key) => key.verify(&message, signature.as_bytes()),
         };
         if ok { Ok(()) } else { Err(InvalidSignature) }
@@ -446,7 +418,6 @@ pub struct SecretKey {
 
 enum Signer {
     AwsLc(PqdsaKeyPair),
-    #[cfg(feature = "fn-dsa-experimental")]
     FnDsa(crate::fn_dsa_draft::Signer),
 }
 
@@ -469,13 +440,10 @@ impl SecretKey {
                 let public = pair.public_key().as_ref().to_vec();
                 (Signer::AwsLc(pair), public)
             }
-            #[cfg(feature = "fn-dsa-experimental")]
             None => {
                 let (signer, public) = crate::fn_dsa_draft::Signer::from_seed(seed)?;
                 (Signer::FnDsa(signer), public)
             }
-            #[cfg(not(feature = "fn-dsa-experimental"))]
-            None => return Err(KeyError::UnsupportedScheme),
         };
         let public = PublicKey::from_bytes(scheme, &public)?;
         let verifying = VerifyingKey::new(&public)?;
@@ -525,7 +493,6 @@ impl SecretKey {
                 }
                 signature
             }
-            #[cfg(feature = "fn-dsa-experimental")]
             Signer::FnDsa(signer) => signer.sign(&message)?,
         };
         Ok(Signature {
@@ -620,20 +587,11 @@ mod tests {
         );
     }
 
-    #[cfg(not(feature = "fn-dsa-experimental"))]
-    #[test]
-    fn a_standard_build_has_no_fn_dsa() {
-        assert_eq!(Scheme::fn_dsa_draft(), None);
-        assert!("fn-dsa-512-draft".parse::<Scheme>().is_err());
-        assert_eq!(Scheme::from_tag(3), None);
-    }
-
-    #[cfg(feature = "fn-dsa-experimental")]
     #[test]
     fn fn_dsa_draft_keys_sign_and_verify() {
-        let fn_dsa = Scheme::fn_dsa_draft().expect("experimental build");
+        let fn_dsa = Scheme::FnDsa512Draft;
         assert_eq!((fn_dsa.tag(), fn_dsa.name()), (3, "fn-dsa-512-draft"));
-        assert!(fn_dsa.is_experimental() && !Scheme::MlDsa44.is_experimental());
+        assert!(fn_dsa.is_draft() && !Scheme::MlDsa44.is_draft());
         assert_eq!(
             (fn_dsa.public_key_len(), fn_dsa.signature_len()),
             (897, 666)
@@ -670,10 +628,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "fn-dsa-experimental")]
     #[test]
     fn fn_dsa_and_ml_dsa_never_cross() {
-        let fn_dsa = Scheme::fn_dsa_draft().expect("experimental build");
+        let fn_dsa = Scheme::FnDsa512Draft;
         let (f, m) = (key(fn_dsa, 5), key(Scheme::MlDsa44, 5));
         let f_sig = f.sign(Domain::Transaction, b"m").expect("sign");
         let m_sig = m.sign(Domain::Transaction, b"m").expect("sign");

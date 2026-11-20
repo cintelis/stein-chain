@@ -157,7 +157,7 @@ comes from a benchmark checked into the repository, not from guesswork.
 | `storage_write` | base + per byte written (plus deposit, §3.3) |
 | `blake3` / `sha3_256` | base + per byte hashed |
 | `ml_dsa_verify` (44 / 65) | measured: ~100 µs / ~150 µs per verify (SPEC §2) |
-| `fn_dsa_verify` (test network only) | measured: ~15 µs per verify |
+| `fn_dsa_verify` (where genesis lists FN-DSA) | measured: ~15 µs per verify |
 | Sending a message (§6) | base + per byte of arguments |
 | Emitting an event | base + per byte |
 
@@ -292,7 +292,7 @@ signed message = "STEIN-SIG-v1" ‖ domain 4 (contract) ‖ contract_address ‖
 ```
 
 `ml_dsa_verify` accepts exactly the schemes in the chain's `tx_schemes`
-parameter, so FN-DSA works in contracts only on the FN-DSA test network.
+parameter, so FN-DSA works in contracts wherever genesis lists it (SPEC §3.5).
 
 ---
 

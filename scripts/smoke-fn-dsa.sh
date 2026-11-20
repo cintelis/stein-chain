@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Smoke test of the FN-DSA TEST NETWORK (SPEC §3.5) with the real binaries,
-# built with `--features stein-crypto/fn-dsa-experimental`:
+# Smoke test of FN-DSA accounts (draft FIPS 206, SPEC §3.5) with the real
+# binaries:
 #
-#   - `init --enable-fn-dsa` creates a separate network (chain 31338) whose
-#     faucet is an FN-DSA account and whose validator stays on ML-DSA;
+#   - `init --scheme fn-dsa-512-draft` creates a network whose faucet is an
+#     FN-DSA account and whose validator stays on ML-DSA;
 #   - FN-DSA and ML-DSA accounts transfer to each other, at the measured sizes
 #     (1,688 bytes with key registration, 790 bytes after) and exact fees;
 #   - a follower re-verifies the FN-DSA signatures and agrees on the state root;
-#   - the standard devnet (no --enable-fn-dsa) still refuses FN-DSA keys.
+#   - a network created with --ml-dsa-only refuses FN-DSA keys.
 #
 # Usage: scripts/smoke-fn-dsa.sh [target-dir]   (default: target/debug)
 
@@ -66,19 +66,19 @@ wait_height() { # <rpc> <height>
   done
 }
 
-# The standard devnet refuses FN-DSA keys without the test-network flag.
-if "$node" --data-dir "$dir/standard" init --scheme fn-dsa-512-draft >/dev/null 2>&1; then
-  echo "smoke-fn-dsa: a standard devnet accepted an FN-DSA faucet" >&2
+# An ML-DSA-only network refuses an FN-DSA faucet.
+if "$node" --data-dir "$dir/standard" init --ml-dsa-only --scheme fn-dsa-512-draft >/dev/null 2>&1; then
+  echo "smoke-fn-dsa: an ML-DSA-only network accepted an FN-DSA faucet" >&2
   exit 1
 fi
 
-"$node" --data-dir "$dir/chain" init --enable-fn-dsa --scheme fn-dsa-512-draft | tee "$dir/init.log"
-grep -q "FN-DSA TEST NETWORK" "$dir/init.log"
+"$node" --data-dir "$dir/chain" init --scheme fn-dsa-512-draft | tee "$dir/init.log"
+grep -q "accounts     : ml-dsa-44, ml-dsa-65, fn-dsa-512-draft" "$dir/init.log"
 grep -q "key schemes  : validator ml-dsa-44, faucet fn-dsa-512-draft" "$dir/init.log"
 "$node" --data-dir "$dir/chain" run --rpc "127.0.0.1:$port" >>"$dir/node.log" 2>&1 &
 pids+=($!)
 wait_up "$rpc"
-expect "chain id" "31338" "$(field "$rpc" chain_id)"
+expect "chain id" "31337" "$(field "$rpc" chain_id)"
 
 frank=$("$wallet" keygen --scheme fn-dsa-512-draft --out "$dir/frank.seed" 2>/dev/null)
 mary=$("$wallet" keygen --scheme ml-dsa-44 --out "$dir/mary.seed" 2>/dev/null)

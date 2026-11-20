@@ -26,10 +26,11 @@ pub struct ChainParams {
     /// before a non-archive node may prune them.
     pub witness_retention_blocks: u64,
     /// Signature schemes accepted for account keys. Adding a scheme (e.g.
-    /// FN-DSA-512 once FIPS 206 is final) is a parameter change, not a format
-    /// change (SPEC §3.4).
+    /// the final FIPS 206) is a parameter change, not a format change
+    /// (SPEC §3.4).
     pub tx_schemes: Vec<Scheme>,
-    /// Signature schemes accepted for validator consensus keys.
+    /// Signature schemes accepted for validator consensus keys. Never a
+    /// draft-standard scheme: genesis validation rejects one.
     pub validator_schemes: Vec<Scheme>,
     /// Blocks per epoch. At each epoch boundary the fee pool is paid out to
     /// the validators by voting power (SHARD-READY I-6).
@@ -47,7 +48,9 @@ impl Default for ChainParams {
             max_tx_ttl_blocks: 600,
             // 6 hours at 1 s blocks; older witnesses go to archive storage.
             witness_retention_blocks: 21_600,
-            tx_schemes: vec![Scheme::MlDsa44, Scheme::MlDsa65],
+            // Accounts may opt in to FN-DSA-512 per the draft FIPS 206
+            // (SPEC §3.5); ML-DSA-44 stays the default for new keys.
+            tx_schemes: Scheme::ALL.to_vec(),
             validator_schemes: vec![Scheme::MlDsa44, Scheme::MlDsa65],
             epoch_blocks: 3_600,
         }

@@ -1,14 +1,14 @@
 //! Cryptographic primitives for Stein Chain.
 //!
 //! Policy: **post-quantum only.** Every signature the chain creates or accepts is
-//! ML-DSA (FIPS 204): ML-DSA-44 or ML-DSA-65, tagged per key (see [`Scheme`]).
+//! ML-DSA (FIPS 204): ML-DSA-44 or ML-DSA-65, or, for account keys only,
+//! FN-DSA-512 per the draft FIPS 206. Each is tagged per key (see [`Scheme`]).
 //! There is no enum variant, code path or configuration switch that selects a
 //! classical scheme. Hashing is BLAKE3 with
 //! a distinct derive-key context per use, so a hash computed for one purpose can
 //! never be replayed as a hash for another (SPEC §3).
 
 mod address;
-#[cfg(feature = "fn-dsa-experimental")]
 mod fn_dsa_draft;
 mod hash;
 mod keys;
