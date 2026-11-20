@@ -11,8 +11,6 @@
 const NETWORKS = [
   { name: "Devnet (Cloudflare follower)", url: "https://stein-follower.nick-598.workers.dev" },
   { name: "Devnet validator (rpc.steinchain.com)", url: "https://rpc.steinchain.com" },
-  { name: "Local validator :8645", url: "http://127.0.0.1:8645" },
-  { name: "Local follower :8646", url: "http://127.0.0.1:8646" },
 ];
 const HOME_ROWS = 6;      // rows in the home page lists
 const SPARK_BLOCKS = 50;  // blocks in the overview chart
@@ -31,9 +29,16 @@ const state = {
 function storageGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
 function storageSet(key, value) { try { localStorage.setItem(key, value); } catch { /* private mode */ } }
 
+// The devnet's validator used to run on a developer's machine and these were
+// in the list. A browser that remembers one goes back to the default; a local
+// node is still reachable with ?node= or "Custom node URL…".
+const RETIRED_NODES = ["http://127.0.0.1:8645", "http://127.0.0.1:8646"];
+
 function chooseNode() {
   const fromQuery = new URLSearchParams(location.search).get("node");
-  return (fromQuery || storageGet("steinscan.node") || NETWORKS[0].url).replace(/\/+$/, "");
+  let saved = storageGet("steinscan.node");
+  if (saved && RETIRED_NODES.includes(saved.replace(/\/+$/, ""))) saved = null;
+  return (fromQuery || saved || NETWORKS[0].url).replace(/\/+$/, "");
 }
 
 // ---------------------------------------------------------------------------
