@@ -171,6 +171,8 @@ accept it: `tx_schemes` is fixed at genesis.
 | `fn-dsa` is a second signature implementation, outside any FIPS validation, and its Gaussian sampling is hard to make constant-time. | **Validators never use FN-DSA.** Genesis validation rejects a draft scheme in `validator_schemes` (`DraftValidatorScheme`). A flaw in FN-DSA could cost the accounts that chose it, never consensus. |
 | Two draft implementations could disagree about which signatures verify: a consensus split. | **One implementation.** `scripts/check-crypto-policy.sh` requires `fn-dsa` at exactly 0.4.0, used by `stein-crypto` alone, and refuses any other FN-DSA or Falcon crate. |
 | FN-DSA-512 is NIST category 1, below ML-DSA-44 (category 2). | Each account chooses its scheme. Accounts holding large balances should prefer ML-DSA-65. |
+| Signing uses floating point, which could round differently on another processor. Verifying and key generation use integers only, so consensus does not depend on it. | **Fixed vectors.** Keys and signatures made from fixed seeds must have the same digests on every platform CI runs (`fn_dsa_draft::vectors`). |
+| With one implementation, nothing shows that it implements the draft as others read it. | **A cross-check, outside the build.** `scripts/cross-check-fn-dsa.sh` gives the same vectors to the C code by the author of `fn-dsa`, fetched at one commit. It must make the same keys and signatures and reach the same verdicts, with hardware floating point and with integers only. |
 
 Also:
 - The name **`-draft`** appears in key files, JSON and the CLI, so no one
@@ -181,7 +183,9 @@ Also:
 
 Tests: `fn_dsa_draft_keys_sign_and_verify`, `fn_dsa_and_ml_dsa_never_cross`,
 `fn_dsa_accounts_work_where_genesis_lists_the_scheme`,
-`scripts/smoke-fn-dsa.sh` (in CI on Linux, Windows and macOS).
+`scripts/smoke-fn-dsa.sh` and
+`every_platform_makes_the_same_keys_and_signatures` (in CI on Linux, Windows
+and macOS), `scripts/cross-check-fn-dsa.sh` (in CI on Linux and macOS).
 
 ---
 

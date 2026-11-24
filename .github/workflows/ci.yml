@@ -59,6 +59,9 @@ jobs:
       - run: cargo build --workspace --locked --bins
       - run: bash scripts/smoke-devnet.sh target/debug
       - run: bash scripts/smoke-fn-dsa.sh target/debug
+      # FN-DSA against a second implementation, which is fetched for this
+      # step and is not part of any build (SPEC §3.5).
+      - run: bash scripts/cross-check-fn-dsa.sh
 
   platforms:
     name: Tests (${{ matrix.os }})
@@ -84,6 +87,10 @@ jobs:
       - run: cargo build --workspace --locked --bins
       - run: bash scripts/smoke-devnet.sh target/debug
       - run: bash scripts/smoke-fn-dsa.sh target/debug
+      # On macOS this is ARM64, with its own floating point. The Windows
+      # runner's bash has no C compiler set up for it.
+      - if: runner.os == 'macOS'
+        run: bash scripts/cross-check-fn-dsa.sh
 
   advisories:
     name: Dependency advisories (RustSec)

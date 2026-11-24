@@ -67,6 +67,13 @@ impl RngCore for SeedRng {
 
 impl CryptoRng for SeedRng {}
 
+/// The generator a seed's key pair is made from.
+fn seed_rng(seed: &[u8; SEED_LEN]) -> SeedRng {
+    let mut hasher = blake3::Hasher::new_derive_key(KEYGEN_CONTEXT);
+    hasher.update(seed);
+    SeedRng(hasher.finalize_xof())
+}
+
 /// A parsed FN-DSA public key.
 /// Boxed: the key carries working buffers too large to move around the stack.
 pub struct Verifier(Box<VerifyingKey512>);
@@ -111,13 +118,18 @@ impl Signer {
             .map_err(|_| KeyError::Crypto)?
     }
 
-    fn keygen(seed: &[u8; SEED_LEN]) -> Result<(Self, Vec<u8>), KeyError> {
-        let mut hasher = blake3::Hasher::new_derive_key(KEYGEN_CONTEXT);
-        hasher.update(seed);
-        let mut rng = SeedRng(hasher.finalize_xof());
+    /// The encoded key pair derived from `seed`: (secret, public). The caller
+    /// wipes the secret.
+    fn encoded_pair(seed: &[u8; SEED_LEN]) -> (Vec<u8>, Vec<u8>) {
+        let mut rng = seed_rng(seed);
         let mut secret = vec![0u8; sign_key_size(FN_DSA_LOGN_512)];
         let mut public = vec![0u8; PUBLIC_KEY_LEN];
         KeyPairGenerator512::default().keygen(FN_DSA_LOGN_512, &mut rng, &mut secret, &mut public);
+        (secret, public)
+    }
+
+    fn keygen(seed: &[u8; SEED_LEN]) -> Result<(Self, Vec<u8>), KeyError> {
+        let (mut secret, public) = Self::encoded_pair(seed);
         let key = SigningKey512::decode(&secret).map(Box::new);
         secret.zeroize();
         let key = key.ok_or(KeyError::Crypto)?;
@@ -126,19 +138,26 @@ impl Signer {
 
     /// Signs with fresh randomness from the operating system.
     pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>, KeyError> {
+        self.sign_with(&mut OsRng, message)
+    }
+
+    /// Signs with randomness from `rng`. Only the tests pass anything but the
+    /// operating system's generator.
+    fn sign_with<R: CryptoRng + RngCore>(
+        &self,
+        rng: &mut R,
+        message: &[u8],
+    ) -> Result<Vec<u8>, KeyError> {
         let mut signature = vec![0u8; SIGNATURE_LEN];
         let mut key = self.0.lock().map_err(|_| KeyError::Crypto)?;
-        key.sign(
-            &mut OsRng,
-            &DOMAIN_NONE,
-            &HASH_ID_RAW,
-            message,
-            &mut signature,
-        )
-        .ok_or(KeyError::Crypto)?;
+        key.sign(rng, &DOMAIN_NONE, &HASH_ID_RAW, message, &mut signature)
+            .ok_or(KeyError::Crypto)?;
         Ok(signature)
     }
 }
 
 /// Shared parsed key, cheap to clone like the AWS-LC one.
 pub type SharedVerifier = Arc<Verifier>;
+
+#[cfg(test)]
+mod vectors;
