@@ -82,12 +82,25 @@ a:hover { color: var(--primary); text-decoration: underline; }
 .nav-search { flex: 1 1 320px; display: flex; max-width: 520px; }
 .nav-search input { flex: 1; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-right: 0; border-radius: 10px 0 0 10px; background: var(--card); color: var(--text); font: inherit; }
 .nav-search button { width: 42px; border: 0; border-radius: 0 10px 10px 0; background: var(--primary); color: #fff; font-size: 18px; cursor: pointer; }
-.menu { display: flex; gap: 22px; align-items: center; margin-left: auto; }
+.menu { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; margin-left: auto; }
 .menu > a, .drop-btn { color: var(--text); font: inherit; font-weight: 500; }
 .menu > a:hover, .drop-btn:hover { color: var(--primary); text-decoration: none; }
-.drop-btn { background: none; border: 0; padding: 0; cursor: pointer; }
+.drop-btn { background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap; }
 .menu > a.gh { display: grid; place-items: center; }
 .menu > a.gh svg { display: block; }
+/* The Inbox and Wallet buttons, as on steinchain.com: an icon, then the label. */
+.menu > a.btn { display: inline-flex; align-items: center; gap: 8px; padding: 6px 13px; border-radius: 10px; border: 1px solid var(--primary); background: var(--primary); color: #fff; font-size: 13.5px; font-weight: 600; }
+.menu > a.btn:hover { color: #fff; filter: brightness(1.12); }
+.menu > a.btn svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.menu > a.btn-ghost { background: transparent; border-color: var(--line); color: var(--text); }
+.menu > a.btn-ghost:hover { border-color: var(--primary); color: var(--text); filter: none; }
+.menu > a.btn + a.btn { margin-left: -10px; }
+@media (max-width: 640px) {
+  .menu { gap: 8px 16px; padding-bottom: 10px; }
+  /* The icon alone: the label would not fit. */
+  .menu > a.btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .menu > a.btn { padding: 7px 10px; }
+}
 .dropdown { position: relative; }
 .drop-menu { display: none; position: absolute; right: 0; top: 100%; padding: 8px; min-width: 210px; background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--primary); border-radius: 0 0 10px 10px; box-shadow: var(--shadow); }
 .dropdown:hover .drop-menu, .dropdown:focus-within .drop-menu { display: block; }
@@ -198,7 +211,7 @@ tbody tr:hover td { background: var(--head); }
 .foot-brand .logo { width: 22px; height: 22px; }
 .foot h3 { font-size: 13.5px; color: var(--text); margin: 0 0 8px; }
 .foot-grid > div > a, .foot-grid > div > span { display: block; margin: 4px 0; }
-.foot-grid > div > a.foot-social { display: inline-flex; margin-top: 10px; color: var(--muted); }
+.foot-grid > div > a.foot-social { display: inline-flex; margin: 10px 14px 0 0; color: var(--muted); }
 .foot-grid > div > a.foot-social:hover { color: var(--text); }
 .foot-mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
 .foot-bottom { border-top: 1px solid var(--line); padding-top: 12px; padding-bottom: 18px; font-size: 12px; }
