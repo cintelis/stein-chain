@@ -112,6 +112,41 @@ jobs:
       # Fails on any known vulnerability in a locked dependency.
       - run: cargo audit
 
+  fuzz:
+    name: Fuzz (a minute per target)
+    # Coverage-guided fuzzing of the decoders and the state machine (SPEC §9),
+    # briefly on every change: enough to catch a decoder that panics on the
+    # day it is written. The long runs are by hand (scripts/fuzz.sh). Built
+    # with the nightly compiler pinned in fuzz/rust-toolchain.toml, which
+    # nothing a node runs is built with.
+    runs-on: ubuntu-latest
+    env:
+      CARGO_FUZZ_VERSION: 0.13.2
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: fuzz-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-${{ env.CARGO_FUZZ_VERSION }}-${{ runner.os }}
+      - run: |
+          version=$(sed -nE 's/^channel *= *"(.*)"$/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$version" --profile minimal
+          nightly=$(sed -nE 's/^channel *= *"(.*)"$/\1/p' fuzz/rust-toolchain.toml)
+          rustup toolchain install "$nightly" --profile minimal
+      - if: steps.fuzz-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-fuzz --version "${CARGO_FUZZ_VERSION}" --locked
+      - run: bash scripts/fuzz.sh 60
+      # A finding is a few bytes: print it, so it can be run again locally
+      # (base64 -d into fuzz/artifacts/<target>/, then see scripts/fuzz.sh).
+      - if: failure()
+        run: |
+          for file in fuzz/artifacts/*/*; do
+            [ -f "$file" ] || continue
+            echo "$file"; base64 -w0 "$file"; echo
+          done
+
   benchmarks:
     name: Benchmarks (release, informational)
     # Shared CI runners are noisy, so this never gates a merge. Run it by hand

@@ -1,0 +1,5 @@
+# The fuzzers alone build with a nightly compiler: libFuzzer's instrumentation
+# is not in a stable one. Pinned to a date, so a run can be repeated. Nothing
+# a node runs is built with it.
+[toolchain]
+channel = "nightly-2026-11-28"

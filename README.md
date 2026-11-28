@@ -95,7 +95,9 @@ RPC: `GET /status`, `GET /account/{address}`, `GET /account/{address}/txs`,
 `POST /tx {"raw": "<borsh hex>"}`, `GET /tx/{id}`, `GET /blocks`, `GET /mempool`,
 `GET /block/{height}[?witnesses=true]`, `GET /tokens`, `GET /token/{address}`,
 `GET /pools`, `GET /pool/{address}`, and `GET /events`, a live stream of
-blocks and transactions (server-sent events).
+blocks and transactions (server-sent events). A node holds each client to a
+rate and answers `429` with `Retry-After` beyond it; requests from the
+node's own machine are not limited (see [deploy/README.md](deploy/README.md)).
 
 **steinscan**, the block explorer, watches it all in real time: see
 [explorer/README.md](explorer/README.md).
@@ -111,9 +113,16 @@ https://steinchain.com.
 ```sh
 cargo test
 cargo clippy --all-targets
+PROPTEST_CASES=2000 cargo test -p stein-state prop_tests   # more random histories than the default 48
+scripts/fuzz.sh 600                                        # every fuzz target for 10 minutes (Linux, macOS)
 cargo run --release -p stein-crypto --example sigbench     # ML-DSA-44/65 sign/verify rates
 cargo run --release -p stein-state  --example throughput   # state-machine TPS, cold vs warm cache
 ```
+
+Property tests (`crates/stein-state/src/prop_tests.rs`,
+`crates/stein-types/tests/decoders.rs`) run with `cargo test`. The fuzz
+targets in `fuzz/` need a nightly compiler and cargo-fuzz, and are not part
+of the workspace: see `scripts/fuzz.sh`.
 
 CI (`.github/workflows/ci.yml`, adapted from Sigilant) runs on every push and
 pull request:
@@ -122,6 +131,7 @@ pull request:
 - `fmt`, `clippy -D warnings` and all tests;
 - an end-to-end devnet smoke test (`scripts/smoke-devnet.sh`) on Linux,
   Windows and macOS;
+- every fuzz target for a minute;
 - RustSec advisories.
 
 Benchmarks run on demand.
@@ -134,6 +144,8 @@ Key security tests (in `crates/stein-state/src/tests.rs`):
 - `accounts_on_different_schemes_share_a_block`
 - `a_rejected_block_restores_new_accounts_and_keys`
 - `supply_is_conserved`
+- `any_history_conserves_everything_and_every_node_agrees` (in
+  `prop_tests.rs`): the same properties over random histories.
 
 ## Provenance
 

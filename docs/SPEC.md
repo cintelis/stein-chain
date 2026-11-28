@@ -566,15 +566,34 @@ These are placeholders. The project owner should set them, with legal advice.
    Admission requires that the sender's balance covers the transaction and
    that its nonce directly follows the account's and its queued ones, so
    nothing that could never be included occupies the pool.
-8. **[planned]** RPC rate limiting per IP, since each submission costs a
-   ~100 µs signature verification before any fee is paid. Public RPC goes
-   behind a proxy/CDN, on RPC nodes, never on the validator core.
-9. **[planned]** Fuzzing (cargo-fuzz) of every decoder: Borsh transaction,
-   block, and genesis.
-10. **[planned]** Property tests: supply conservation across random transaction
-    sequences. [built: deterministic tests, for STEIN, every token and every
-    pool's shares across a mixed history of transfers, swaps, deposits and
-    withdrawals]
+8. **[built]** RPC rate limiting per client, since each submission costs a
+   ~100 µs signature verification before any fee is paid. A client is an
+   IPv4 address or an IPv6 /64, and has a budget per minute for submissions
+   (60), block-log reads (120) and all other requests (1,200), and a cap on
+   open event streams (16). Over budget, the answer is `429` with
+   `Retry-After`, before the request is looked at. The table of clients is
+   bounded. Behind a proxy, the node takes the client's address from the
+   header the operator names. Public RPC goes behind a proxy/CDN, on RPC
+   nodes, never on the validator core: on the devnet the public address
+   leads to a follower, and the validator's port stays on its own machine.
+   One client is bounded here; a flood from many addresses is the proxy's to
+   stop (§10.5).
+9. **[built]** Fuzzing (cargo-fuzz, in `fuzz/`) of every decoder:
+   transactions, blocks and the genesis document, in Borsh and in JSON, and
+   addresses, assets and amounts in text. Whatever decodes from Borsh must
+   re-encode to the same bytes, so a value has exactly one encoding. A fifth
+   target signs the histories the fuzzer describes and runs them through a
+   leader and a follower. CI runs each target for a minute on every change;
+   longer runs are by hand (`scripts/fuzz.sh`). Continuous fuzzing on
+   dedicated machines is [planned].
+10. **[built]** Property tests: random histories of transfers, tokens, pools
+    and swaps, valid and not. After every block STEIN, every token and every
+    pool's shares add up to their supply; a second node reaches the same
+    state root; a block the proposer signed with a transaction slipped in,
+    without its witnesses or under another state root is refused and leaves
+    no trace; and a node replaying the history from genesis ends in the same
+    state. The decoders have property tests of their own
+    (`stein-types/tests/decoders.rs`).
 11. **[planned]** Two independent external audits (protocol and cryptography
     integration) before mainnet. A bug bounty from testnet onward.
 12. **[planned]** Reproducible builds for validator binaries (Linux, built from
@@ -694,7 +713,7 @@ Cloudflare **does** fit the edges:
 | 1.3 | FN-DSA test network (experimental) | **done**, superseded by 1.4 |
 | 1.4 | FN-DSA-512 accounts ahead of the final FIPS 206 (§3.5) | **done** |
 | 1.5 | Tokens and liquidity pools as native transaction types (§4.6, §4.7); `stein token` and `stein pool`; steinscan shows them | **done** |
-| 2 | Hardening: fuzzing, property tests, RocksDB storage (state on disk), JMT state **keyed by address nibbles**, RPC rate limits, archive offload to R2 | next |
+| 2 | Hardening: fuzzing, property tests, RocksDB storage (state on disk), JMT state **keyed by address nibbles**, RPC rate limits, archive offload to R2. Fuzzing, property tests and rate limits are built | next |
 | 2.1 | Shard-readiness gaps ([SHARD-READY.md](SHARD-READY.md) §5): supply < 2¹²⁷, fee pool, `version` fields, `shard_id: 0` in RPC | **done** |
 | 3 | P2P: QUIC + PQ TLS, transaction gossip, **compact block propagation**, RPC-node role | |
 | 4 | Consensus: Malachite + ML-DSA votes, staking, slashing, epochs, checkpoints. **Formal model** of the consensus protocol (Quint/TLA+, model-checked for safety). **Deterministic simulation testing**: the whole network in one process with injected crashes, partitions, delays and Byzantine validators, run millions of times per change | |

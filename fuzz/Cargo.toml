@@ -1,0 +1,59 @@
+# Coverage-guided fuzzing of everything that decodes or executes input a node
+# does not control (SPEC §9). Not part of the workspace: it needs a nightly
+# compiler (rust-toolchain.toml here) and libFuzzer, and no node is built
+# with either. Run it with scripts/fuzz.sh.
+[package]
+name = "stein-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "UNLICENSED"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+borsh = { version = "1.8", features = ["derive"] }
+serde = "1"
+serde_json = "1"
+stein-crypto = { path = "../crates/stein-crypto" }
+stein-types = { path = "../crates/stein-types" }
+stein-state = { path = "../crates/stein-state" }
+
+[[bin]]
+name = "transaction"
+path = "fuzz_targets/transaction.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "blocks"
+path = "fuzz_targets/blocks.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "genesis"
+path = "fuzz_targets/genesis.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text"
+path = "fuzz_targets/text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "history"
+path = "fuzz_targets/history.rs"
+test = false
+doc = false
+bench = false

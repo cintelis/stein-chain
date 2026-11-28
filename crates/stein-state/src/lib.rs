@@ -1141,4 +1141,6 @@ impl State {
 #[cfg(test)]
 mod asset_tests;
 #[cfg(test)]
+mod prop_tests;
+#[cfg(test)]
 mod tests;

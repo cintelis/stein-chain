@@ -50,7 +50,7 @@ fn swap(asset_in: Asset, amount_in: Amount, asset_out: Asset, min_out: Amount) -
 }
 
 /// Every unit of everything is somewhere, and nothing is held in zero amounts.
-fn assert_conserved(state: &State, genesis: &Genesis) {
+pub(crate) fn assert_conserved(state: &State, genesis: &Genesis) {
     let stein: Amount = state.accounts.values().map(|a| a.balance).sum();
     assert_eq!(Some(stein), genesis.total_supply(), "STEIN supply");
     let held = |asset: &Address| -> Amount {

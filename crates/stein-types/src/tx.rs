@@ -20,6 +20,7 @@ pub enum Action {
         /// Recipient.
         to: Address,
         /// Base units to move. Must be non-zero.
+        #[serde(with = "crate::amount::string")]
         amount: Amount,
     },
     /// Create a token with a fixed supply, all of it credited to the sender.
