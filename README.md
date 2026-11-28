@@ -101,9 +101,9 @@ blocks and transactions (server-sent events).
 [explorer/README.md](explorer/README.md).
 
 Two more parts of the project have repositories of their own:
-[stein-wallet](https://github.com/cintelis/stein-wallet), the browser wallet
+[stein-wallet](https://github.com/steinchain/stein-wallet), the browser wallet
 at https://wallet.steinchain.com, and
-[stein-site](https://github.com/cintelis/stein-site), the home page at
+[stein-site](https://github.com/steinchain/stein-site), the home page at
 https://steinchain.com.
 
 ## Tests and benchmarks

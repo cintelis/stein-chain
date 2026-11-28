@@ -26,7 +26,7 @@ The identity and hooks are local git configuration, so a fresh clone must set th
 git config user.name  "Nick Forshteyn"
 git config user.email "nick@cintelis.ai"
 git config core.hooksPath .githooks
-git remote set-url origin https://cintelis@github.com/cintelis/stein-chain.git
+git remote set-url origin https://cintelis@github.com/steinchain/stein-chain.git
 ```
 
 ### How it is enforced
