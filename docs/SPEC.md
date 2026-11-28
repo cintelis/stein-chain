@@ -39,6 +39,7 @@ question for the project owner.
    never reverted.
 
 Non-goals for v1: smart contracts (§12), privacy features, cross-chain bridges.
+Contracts and a bridge are planned after it: see [ROADMAP.md](ROADMAP.md).
 Tokens and liquidity pools are built in as transaction types (§4.6, §4.7);
 they do not wait for contracts.
 
@@ -703,6 +704,10 @@ Cloudflare **does** fit the edges:
 ---
 
 ## 11. Roadmap
+
+The phases ahead, with the work in each and what must be true before the
+next begins, are in [ROADMAP.md](ROADMAP.md). The table below records what
+has been delivered.
 
 | Phase | Deliverable | Status |
 |---|---|---|
