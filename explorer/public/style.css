@@ -228,3 +228,33 @@ tbody tr:hover td { background: var(--head); }
 /* Search buttons carry the Lucide search icon. */
 .nav-search button, .hero-search button { display: grid; place-items: center; padding: 0; }
 .nav-search button svg, .hero-search button svg { display: block; }
+
+/* On a phone. The header was five rows before any content: the brand and the
+   two buttons now share one row, the search has the next, the links the last. */
+@media (max-width: 640px) {
+  .strip-info { display: none; }
+  .strip-row { justify-content: flex-end; padding-top: 5px; padding-bottom: 5px; }
+  .nav-row { gap: 8px 14px; min-height: 0; padding-top: 10px; padding-bottom: 10px; }
+  .brand { order: 1; margin-right: auto; font-size: 19px; }
+  /* The menu's own box goes; its links and buttons take their places in the row. */
+  .menu { display: contents; }
+  .menu > a.btn-ghost { order: 2; }
+  .menu > a.btn:not(.btn-ghost) { order: 3; }
+  .menu > a.btn + a.btn { margin-left: 0; }
+  /* A line break before the links, whether or not the search is shown. */
+  .menu::before { content: ""; order: 4; flex-basis: 100%; height: 0; margin-top: -8px; }
+  .nav-search { order: 4; flex: 1 1 100%; max-width: none; }
+  .menu > a:not(.btn), .menu > .dropdown { order: 5; }
+  .menu > a.gh { margin-left: auto; }
+  .drop-menu { left: 0; right: auto; }
+  /* 16px: a smaller field makes an iPhone zoom the page when it is tapped. */
+  .nav-search input, .hero-search input, .hero-search select, .strip select { font-size: 16px; }
+  .hero { padding: 24px 0 60px; }
+  .hero-search select { max-width: 104px; padding: 0 6px; }
+  /* Latest blocks and transactions: who and how much on one line, the rest under it. */
+  .list-row { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; padding: 11px 14px; }
+  .lr-mid { grid-column: 1 / -1; grid-row: 2; padding-left: 54px; }
+  .card-head { padding: 12px 14px; }
+  th, td { padding: 9px 10px; }
+  .page-title { margin-bottom: 12px; }
+}
