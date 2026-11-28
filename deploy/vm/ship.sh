@@ -92,6 +92,9 @@ fi
 echo "ship: validator is up on $SHA, genesis $genesis"
 echo "STEIN_GENESIS_HASH=$genesis" >> .env
 $compose up -d
+# The tunnel reads its configuration when it starts, and a changed file alone
+# does not restart it: without this it goes on sending to wherever it did.
+$compose up -d --force-recreate named-tunnel
 
 # The public reach the follower, so the deploy is done when it has caught up.
 for _ in $(seq 150); do
