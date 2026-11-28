@@ -1,5 +1,6 @@
-# Named Cloudflare Tunnel for validator A: a stable public address
-# (https://rpc.steinchain.com) instead of a quick tunnel's random one.
+# Named Cloudflare Tunnel for follower B, the devnet's public RPC node: a
+# stable address (https://rpc.steinchain.com) instead of a quick tunnel's
+# random one. The validator is not published (SPEC §9).
 #
 # The tunnel's credentials are NOT in the repository. They live in
 # ~/.cloudflared/stein-devnet.json on the operator's machine (created by
@@ -8,7 +9,7 @@ tunnel: stein-devnet
 credentials-file: /etc/cloudflared/credentials.json
 
 ingress:
-  # Only the validator's RPC, and only on this hostname.
+  # Only the follower's RPC, and only on this hostname.
   - hostname: rpc.steinchain.com
-    service: http://stein-a:8645
+    service: http://stein-b:8645
   - service: http_status:404

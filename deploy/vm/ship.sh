@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Ships the committed tree to the validator's VM and (re)starts the devnet
-# there: validator A, its named tunnel (https://rpc.steinchain.com) and the
-# traffic generator. See deploy/README.md, "Validator on a VM".
+# there: validator A, follower B with its named tunnel
+# (https://rpc.steinchain.com) and the traffic generator. See
+# deploy/README.md, "Validator on a VM".
 #
 #   deploy/vm/ship.sh            ship HEAD, rebuild, restart
 #   deploy/vm/ship.sh --reset    the same, but first DELETE the chain on the
@@ -70,17 +71,40 @@ if [ "$RESET" = 1 ]; then
   echo "ship: deleting the chain on the VM"
   $compose down --volumes
 fi
+docker compose -f compose.yml up -d stein-a
+
+field() { # <rpc> <name> -> that field of its /status
+  curl -fsS "$1/status" 2>/dev/null | tr ',{}' '\n\n\n' | grep "\"$2\":" | cut -d: -f2 | tr -d '"'
+}
+
+# The follower pins the genesis hash the validator itself reports here, on
+# the VM's loopback: never one that came back through the tunnel.
+genesis=""
+for _ in $(seq 60); do
+  genesis=$(field http://127.0.0.1:8645 genesis_hash) && [ -n "$genesis" ] && break
+  sleep 2
+done
+if ! [[ "$genesis" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "ship: the validator did not answer within two minutes" >&2
+  docker compose -f compose.yml logs --tail 40 stein-a >&2
+  exit 1
+fi
+echo "ship: validator is up on $SHA, genesis $genesis"
+echo "STEIN_GENESIS_HASH=$genesis" >> .env
 $compose up -d
 
-for _ in $(seq 60); do
-  if status=$(curl -fsS http://127.0.0.1:8645/status 2>/dev/null); then
-    echo "ship: validator is up on $SHA"
-    echo "$status"
+# The public reach the follower, so the deploy is done when it has caught up.
+for _ in $(seq 150); do
+  height=$(field http://127.0.0.1:8645 height) || height=""
+  if [ -n "$height" ] && [ "$(field http://127.0.0.1:8646 height)" = "$height" ]; then
+    echo "ship: follower is in step with the validator at height $height"
+    curl -fsS http://127.0.0.1:8646/status
+    echo
     exit 0
   fi
   sleep 2
 done
-echo "ship: the validator did not answer within two minutes" >&2
-docker compose -f compose.yml logs --tail 40 stein-a >&2
+echo "ship: the follower did not catch up within five minutes" >&2
+docker compose -f compose.yml logs --tail 40 stein-b >&2
 exit 1
 REMOTE

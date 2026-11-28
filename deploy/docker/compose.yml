@@ -3,21 +3,22 @@
 #   docker compose -f deploy/docker/compose.yml up -d --build stein-a
 #       validator A on http://127.0.0.1:8645 (data in the stein-a volume)
 #
-#   docker compose -f deploy/docker/compose.yml --profile tunnel up -d
-#       + a Cloudflare quick tunnel exposing A at a random
-#         https://<name>.trycloudflare.com (see `logs tunnel`), for a follower
-#         running in Cloudflare Containers (deploy/cloudflare)
-#
 #   STEIN_GENESIS_HASH=<hash> docker compose -f deploy/docker/compose.yml --profile local-follower up -d
 #       + follower B on http://127.0.0.1:8646, following A over the compose network
+#
+#   STEIN_GENESIS_HASH=<hash> docker compose -f deploy/docker/compose.yml --profile tunnel up -d
+#       + follower B, and a Cloudflare quick tunnel exposing it at a random
+#         https://<name>.trycloudflare.com (see `logs tunnel`), for a follower
+#         running in Cloudflare Containers (deploy/cloudflare)
 #
 #   docker compose -f deploy/docker/compose.yml --profile loadgen up -d loadgen
 #       + steady devnet traffic to A, paid for by the faucet. The validator
 #         only produces a block when transactions are waiting, so without
 #         this an unused devnet stands still.
 #
-# The validator's RPC has no authentication or rate limiting yet: the tunnel
-# is for a devnet only.
+# The public never reach the validator (SPEC §9): both tunnels lead to
+# follower B, which holds each client to a rate, re-verifies A's blocks and
+# forwards transactions to A. A's own port stays on this machine.
 
 name: stein-devnet
 
@@ -29,14 +30,23 @@ services:
     image: stein-node:dev
     environment:
       STEIN_ROLE: validator
+      # A is reached only from this machine: by B, which forwards everyone's
+      # transactions from one address, by loadgen, and through the port
+      # below. The limits are B's to enforce.
+      STEIN_RPC_SUBMITS_PER_MINUTE: 0
+      STEIN_RPC_SYNCS_PER_MINUTE: 0
+      STEIN_RPC_READS_PER_MINUTE: 0
+      STEIN_RPC_STREAMS: 0
     ports:
       - "127.0.0.1:8645:8645"
     volumes:
       - stein-a:/data
     restart: unless-stopped
 
+  # Follower B: the node the public reach, through a tunnel. Each client is
+  # held to the node's default rates (stein-node follow --help).
   stein-b:
-    profiles: [local-follower]
+    profiles: [local-follower, tunnel, named-tunnel]
     image: stein-node:dev
     depends_on:
       stein-a:
@@ -46,6 +56,10 @@ services:
       STEIN_LEADER: http://stein-a:8645
       # Required; the entrypoint refuses to start without it.
       STEIN_GENESIS_HASH: ${STEIN_GENESIS_HASH:-}
+      # Cloudflare's edge writes the client's address here, over anything the
+      # client sent. Trusted because the tunnels are the only way in from
+      # outside: the port below is on this machine's loopback.
+      STEIN_RPC_CLIENT_IP_HEADER: cf-connecting-ip
     ports:
       - "127.0.0.1:8646:8645"
     volumes:
@@ -73,7 +87,7 @@ services:
       disable: true
     restart: unless-stopped
 
-  # Named tunnel: validator A at https://rpc.steinchain.com (stable).
+  # Named tunnel: follower B at https://rpc.steinchain.com (stable).
   # Credentials stay outside the repository; see deploy/README.md.
   named-tunnel:
     profiles: [named-tunnel]
@@ -83,7 +97,7 @@ services:
       - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
       - ${STEIN_TUNNEL_CREDENTIALS:-./cloudflared/credentials.json}:/etc/cloudflared/credentials.json:ro
     depends_on:
-      stein-a:
+      stein-b:
         condition: service_healthy
     restart: unless-stopped
 
@@ -93,9 +107,9 @@ services:
     profiles: [tunnel]
     # cloudflared 2026.9.3, pinned by digest.
     image: cloudflare/cloudflared@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
-    command: tunnel --no-autoupdate --url http://stein-a:8645
+    command: tunnel --no-autoupdate --url http://stein-b:8645
     depends_on:
-      stein-a:
+      stein-b:
         condition: service_healthy
     restart: unless-stopped
 

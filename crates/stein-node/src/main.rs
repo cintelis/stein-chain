@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use stein_crypto::{Hash, Scheme, create_seed_file};
+use stein_node::limit::{Limiter, Limits};
 use stein_node::{Node, Role, default_data_dir, files, rpc};
 use stein_types::{Allocation, ChainParams, Genesis, GenesisValidator, ONE_STEIN};
 
@@ -45,10 +46,12 @@ enum Command {
     },
     /// Run the node as the validator.
     Run {
-        /// RPC listen address. Keep it on localhost unless it sits behind a
-        /// proxy or tunnel: the RPC has no auth or rate limiting yet.
+        /// RPC listen address. Keep it on localhost: the public reach a
+        /// follower, never the validator (SPEC §9).
         #[arg(long, env = "STEIN_RPC", default_value = "127.0.0.1:8645")]
         rpc: SocketAddr,
+        #[command(flatten)]
+        limits: RpcLimits,
     },
     /// Run the node as a follower of a validator: forward transactions to it,
     /// and download and fully re-verify its blocks.
@@ -63,7 +66,46 @@ enum Command {
         /// RPC listen address.
         #[arg(long, env = "STEIN_RPC", default_value = "127.0.0.1:8646")]
         rpc: SocketAddr,
+        #[command(flatten)]
+        limits: RpcLimits,
     },
+}
+
+/// What one client (an IPv4 address or an IPv6 /64) may ask of the RPC.
+/// Requests from this machine itself are never limited.
+#[derive(clap::Args)]
+struct RpcLimits {
+    /// Transactions a client may submit per minute; 0 for no limit.
+    #[arg(long, env = "STEIN_RPC_SUBMITS_PER_MINUTE", default_value_t = Limits::default().submits_per_minute)]
+    rpc_submits_per_minute: u32,
+    /// Block-log reads (what a follower syncs from) a client may make per
+    /// minute; 0 for no limit.
+    #[arg(long, env = "STEIN_RPC_SYNCS_PER_MINUTE", default_value_t = Limits::default().syncs_per_minute)]
+    rpc_syncs_per_minute: u32,
+    /// Other requests a client may make per minute; 0 for no limit.
+    #[arg(long, env = "STEIN_RPC_READS_PER_MINUTE", default_value_t = Limits::default().reads_per_minute)]
+    rpc_reads_per_minute: u32,
+    /// Event streams a client may hold open at once; 0 for no limit.
+    #[arg(long, env = "STEIN_RPC_STREAMS", default_value_t = Limits::default().streams)]
+    rpc_streams: u32,
+    /// The header a proxy in front of this node puts the client's address
+    /// in, e.g. cf-connecting-ip. Set it only when the proxy is the only way
+    /// to reach the node: a client that reaches the node directly can write
+    /// the header itself.
+    #[arg(long, env = "STEIN_RPC_CLIENT_IP_HEADER")]
+    rpc_client_ip_header: Option<axum::http::HeaderName>,
+}
+
+impl From<RpcLimits> for Limits {
+    fn from(l: RpcLimits) -> Self {
+        Self {
+            submits_per_minute: l.rpc_submits_per_minute,
+            syncs_per_minute: l.rpc_syncs_per_minute,
+            reads_per_minute: l.rpc_reads_per_minute,
+            streams: l.rpc_streams,
+            client_ip_header: l.rpc_client_ip_header,
+        }
+    }
 }
 
 #[tokio::main]
@@ -91,15 +133,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             validator_scheme,
             ml_dsa_only,
         ),
-        Command::Run { rpc } => serve(Node::open(&cli.data_dir)?, rpc).await,
+        Command::Run { rpc, limits } => serve(Node::open(&cli.data_dir)?, rpc, limits.into()).await,
         Command::Follow {
             leader,
             genesis_hash,
             rpc,
+            limits,
         } => {
             serve(
                 Node::open_follower(&cli.data_dir, &leader, genesis_hash).await?,
                 rpc,
+                limits.into(),
             )
             .await
         }
@@ -181,7 +225,11 @@ fn init(
     Ok(())
 }
 
-async fn serve(node: Arc<Node>, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
+async fn serve(
+    node: Arc<Node>,
+    addr: SocketAddr,
+    limits: Limits,
+) -> Result<(), Box<dyn std::error::Error>> {
     match &node.role {
         Role::Validator(_) => tokio::spawn(Arc::clone(&node).run_producer()),
         Role::Follower(leader) => {
@@ -190,11 +238,24 @@ async fn serve(node: Arc<Node>, addr: SocketAddr) -> Result<(), Box<dyn std::err
         }
     };
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    tracing::info!(%addr, genesis = %node.genesis_hash, "RPC listening");
-    axum::serve(listener, rpc::router(node))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
+    tracing::info!(
+        %addr,
+        genesis = %node.genesis_hash,
+        submits_per_minute = limits.submits_per_minute,
+        syncs_per_minute = limits.syncs_per_minute,
+        reads_per_minute = limits.reads_per_minute,
+        streams = limits.streams,
+        client_ip_header = limits.client_ip_header.as_ref().map(|h| h.as_str()),
+        "RPC listening; limits are per client, 0 is none"
+    );
+    let app = rpc::router_with_limits(node, Limiter::new(limits));
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+    .await?;
     Ok(())
 }

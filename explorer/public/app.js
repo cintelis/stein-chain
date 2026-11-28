@@ -10,7 +10,7 @@
 
 const NETWORKS = [
   { name: "Devnet (Cloudflare follower)", url: "https://stein-follower.nick-598.workers.dev" },
-  { name: "Devnet validator (rpc.steinchain.com)", url: "https://rpc.steinchain.com" },
+  { name: "Devnet (rpc.steinchain.com)", url: "https://rpc.steinchain.com" },
 ];
 const HOME_ROWS = 6;      // rows in the home page lists
 const SPARK_BLOCKS = 50;  // blocks in the overview chart

@@ -23,6 +23,10 @@ export class SteinFollower extends Container<Env> {
         STEIN_LEADER: env.STEIN_LEADER,
         STEIN_GENESIS_HASH: env.STEIN_GENESIS_HASH,
         STEIN_RPC: "0.0.0.0:8645",
+        // Each client is held to the node's default rates. Cloudflare's edge
+        // writes the client's address in this header, and the Worker below,
+        // which passes it on, is the only way to the container.
+        STEIN_RPC_CLIENT_IP_HEADER: "cf-connecting-ip",
       },
     });
   }

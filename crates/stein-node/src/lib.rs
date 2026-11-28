@@ -11,6 +11,7 @@
 //! Following over HTTPS is the devnet stand-in for phase 3's QUIC gossip and
 //! BFT consensus (SPEC §6, §7). The verification rules are the same.
 
+pub mod limit;
 pub mod mempool;
 pub mod rpc;
 pub mod store;

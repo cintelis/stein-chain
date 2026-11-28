@@ -1,21 +1,28 @@
-# Two-node devnet: validator in Docker, follower in Cloudflare
+# Devnet: validator and public follower in Docker, a second follower in Cloudflare
 
 ```
- your machine                                   Cloudflare
- ┌──────────────────────────┐                  ┌───────────────────────────────┐
- │ stein-a (validator)      │◄── quick tunnel ─┤ Worker ─► Container           │
- │ 127.0.0.1:8645           │   (HTTPS, PQ     │          stein follower       │
- │ blocks in volume stein-a │    key exchange) │          (re-verifies blocks) │
- └──────────────────────────┘                  └───────────────────────────────┘
-          ▲                                               ▲
-          └─────── stein wallet ──────────────────────────┘
+ your machine                                      Cloudflare
+ ┌──────────────────────────┐                     ┌───────────────────────────────┐
+ │ stein-a (validator)      │                     │ Worker ─► Container           │
+ │ 127.0.0.1:8645           │                     │          stein follower       │
+ │ blocks in volume stein-a │                     │          (re-verifies blocks) │
+ └────────────▲─────────────┘                     └───────────────┬───────────────┘
+              │ compose network                                   │
+ ┌────────────┴─────────────┐                                     │
+ │ stein-b (follower)       │◄── tunnel (HTTPS, PQ key exchange) ─┘
+ │ 127.0.0.1:8646           │◄── wallets, steinscan
+ │ rate limits per client   │
+ └──────────────────────────┘
 ```
 
 **Validator A** runs in local Docker, because a validator's block log must be
-durable. **Follower B** runs in Cloudflare Containers. Its disk is not
-durable, which is fine: on every start it pins the genesis hash, re-syncs from
-A and re-verifies every block. B forwards transactions to A and applies A's
-blocks only after checking every signature and the state root itself.
+durable. Nothing outside the machine reaches it. **Follower B** runs beside
+it and is the node the public reach, through a tunnel: it holds each client
+to a rate (see "Rate limits"), forwards transactions to A, and applies A's
+blocks only after checking every signature and the state root itself. A
+second follower runs in **Cloudflare Containers** and follows B through the
+tunnel. Its disk is not durable, which is fine: on every start it pins the
+genesis hash, re-syncs and re-verifies every block.
 
 The follower-to-tunnel connection uses Stein's TLS policy (`stein-tls`): TLS
 1.3, with X25519MLKEM768 key exchange, which Cloudflare's edge supports.
@@ -24,9 +31,9 @@ The follower-to-tunnel connection uses Stein's TLS policy (`stein-tls`): TLS
 
 The devnet's validator runs on a Linux VM, not on a laptop, so the chain keeps
 producing blocks when nobody's machine is on. The VM runs the same compose
-file as below: validator A, the named tunnel that publishes it at
-**https://rpc.steinchain.com**, and the traffic generator. The validator's
-port stays on the VM's loopback; only the tunnel reaches it.
+file as below: validator A, follower B, the named tunnel that publishes B at
+**https://rpc.steinchain.com**, and the traffic generator. Both nodes' ports
+stay on the VM's loopback (A on 8645, B on 8646); the tunnel reaches B alone.
 
 ```sh
 echo 'STEIN_VM=user@host'            >  deploy/vm/.env     # gitignored
@@ -36,8 +43,10 @@ deploy/vm/ship.sh --reset            # the same, and start a NEW chain
 ```
 
 `ship.sh` sends a `git archive` of the commit to `~/stein-chain` on the VM,
-builds the image there and restarts the services. `~/stein-chain/DEPLOYED_COMMIT`
-records what runs. The validator's key and the faucet key are created on the
+builds the image there and restarts the services: the validator first, then
+the follower, pinned to the genesis hash the validator reports on the VM's
+loopback, then the tunnel. It is done when the follower has caught up.
+`~/stein-chain/DEPLOYED_COMMIT` records what runs. The validator's key and the faucet key are created on the
 VM, in the `stein-a` volume, and never leave it.
 
 Once per VM, copy the tunnel credentials (section 2) to
@@ -76,17 +85,18 @@ The first start creates a devnet in the `stein-a` volume:
 
 Keep `faucet.seed` private.
 
-## 2. Tunnel to A: named, stable (current setup)
+## 2. Tunnel to B: named, stable (current setup)
 
-Validator A is published at **https://rpc.steinchain.com** through the
+Follower B is published at **https://rpc.steinchain.com** through the
 Cloudflare Tunnel `stein-devnet`. Its configuration is committed in
 `deploy/docker/cloudflared/config.yml`. Its credentials are not committed:
 they live in `~/.cloudflared/stein-devnet.json` on the operator's machine, and
 `deploy/docker/.env` (gitignored) points compose at them.
 
 ```sh
-docker compose -f deploy/docker/compose.yml --profile named-tunnel up -d named-tunnel
-curl -s https://rpc.steinchain.com/status
+STEIN_GENESIS_HASH=<hash from step 1> \
+  docker compose -f deploy/docker/compose.yml --profile named-tunnel up -d
+curl -s https://rpc.steinchain.com/status     # role: follower
 ```
 
 One-time setup on a new machine. In Git Bash, set `MSYS_NO_PATHCONV=1` first,
@@ -101,14 +111,16 @@ echo "STEIN_TUNNEL_CREDENTIALS=$HOME/.cloudflared/stein-devnet.json" > deploy/do
 ```
 
 The repository variables `STEIN_LEADER_URL` (https://rpc.steinchain.com) and
-`STEIN_GENESIS_HASH` tell CI where the validator is and which chain to pin.
+`STEIN_GENESIS_HASH` tell CI which node the Cloudflare follower follows and
+which chain to pin.
 If the validator is re-initialised (a new genesis), update
 `STEIN_GENESIS_HASH`, or the follower deploy will refuse to run.
 
 ## 2b. Quick tunnel (no account, temporary)
 
 ```sh
-docker compose -f deploy/docker/compose.yml --profile tunnel up -d
+STEIN_GENESIS_HASH=<hash from step 1> \
+  docker compose -f deploy/docker/compose.yml --profile tunnel up -d
 docker compose -f deploy/docker/compose.yml logs tunnel | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com'
 ```
 
@@ -116,11 +128,40 @@ A Cloudflare **quick tunnel** needs no account or DNS. Its URL changes every
 time the tunnel restarts; if it does, redeploy the follower (step 3). For a
 stable URL, use a named tunnel on your own domain instead.
 
-> The validator's RPC has no authentication or rate limiting yet (SPEC §9).
-> Anyone with the tunnel URL can read the chain and submit transactions
-> (which still need valid signatures and fees). Fine for a devnet; stop the
-> tunnel when you are not testing:
-> `docker compose -f deploy/docker/compose.yml stop tunnel`.
+> The RPC has no authentication. Anyone with the tunnel URL can read the
+> chain and submit transactions (which still need valid signatures and
+> fees), within the rate limits below. Stop the tunnel when you are not
+> testing: `docker compose -f deploy/docker/compose.yml stop tunnel`.
+
+## Rate limits
+
+A node holds each client, an IPv4 address or an IPv6 /64, to a budget per
+minute, and answers `429` with `Retry-After` once it is spent (SPEC §9):
+
+| Setting | Default | What it bounds |
+|---|---|---|
+| `STEIN_RPC_SUBMITS_PER_MINUTE` | 60 | `POST /tx` |
+| `STEIN_RPC_SYNCS_PER_MINUTE` | 120 | `GET /raw/blocks`, what a follower syncs from |
+| `STEIN_RPC_READS_PER_MINUTE` | 1200 | every other request |
+| `STEIN_RPC_STREAMS` | 16 | `GET /events` streams open at once |
+| `STEIN_RPC_CLIENT_IP_HEADER` | unset | the header a proxy names the client in |
+
+0 switches a limit off. Requests from the node's own machine (a loopback
+peer) are never limited.
+
+- **Follower B** takes the client's address from `cf-connecting-ip`, which
+  Cloudflare's edge writes over anything the client sent. That is safe only
+  because the tunnel is the one way in from outside. A node that clients can
+  reach directly must leave the header unset, or a client could name any
+  address it liked.
+- **Validator A** has every limit off: it is reached only by B, which
+  forwards everyone's transactions from one address, by `loadgen`, and from
+  the machine itself.
+- **The Cloudflare follower** has the same limits as B, and is itself one
+  client of B: everything sent through it shares one budget there.
+
+This bounds one client. Stopping a flood from many addresses is a rule on
+the Cloudflare zone, not something the node does.
 
 ## 3. Follower B (Cloudflare Containers)
 
@@ -140,7 +181,7 @@ npm install
 ```
 
 `deploy.sh` reads the genesis hash from the **local** validator, never from
-the tunnel. It refuses to deploy if the tunnel leads elsewhere. It prints the
+the tunnel. It refuses to deploy if the tunnel leads to another chain. It prints the
 Worker URL, e.g. `https://stein-follower.<account>.workers.dev`.
 
 The first request starts the container (cold start of a few seconds), and
@@ -149,7 +190,7 @@ then it syncs.
 ## 4. Node to node
 
 ```sh
-B=https://stein-follower.<account>.workers.dev
+B=https://stein-follower.<account>.workers.dev   # or http://127.0.0.1:8646
 stein keygen --out bob.seed                                  # prints bob's address
 stein --rpc "$B" send --key faucet.seed --to <bob> --amount 25   # sent via B
 stein --rpc http://127.0.0.1:8645 balance <bob>              # on A
@@ -157,7 +198,7 @@ stein --rpc "$B" balance <bob>                               # on B: same
 curl -s "$B/status"                                          # role: follower, same state_root as A
 ```
 
-If B's `/status` shows a `sync_error`, B received data from A that failed
+If a follower's `/status` shows a `sync_error`, it received data that failed
 verification and has stopped following. It never applies such data.
 
 ## Devnet traffic
@@ -179,7 +220,7 @@ accounts. Stop it with
 
 ## Local-only alternative
 
-Run both nodes locally, without Cloudflare:
+Run A and B locally, without a tunnel or Cloudflare:
 
 ```sh
 STEIN_GENESIS_HASH=<hash from step 1> \
@@ -190,7 +231,7 @@ curl -s http://127.0.0.1:8646/status
 ## Tear down
 
 ```sh
-docker compose -f deploy/docker/compose.yml --profile tunnel --profile local-follower down      # keeps the chain
-docker compose -f deploy/docker/compose.yml --profile tunnel --profile local-follower down -v   # deletes it
+docker compose -f deploy/docker/compose.yml --profile tunnel --profile named-tunnel --profile loadgen down      # keeps the chain
+docker compose -f deploy/docker/compose.yml --profile tunnel --profile named-tunnel --profile loadgen down -v   # deletes it
 cd deploy/cloudflare && npx wrangler delete
 ```

@@ -1,5 +1,7 @@
-//! JSON RPC over HTTP. Devnet only: binds to localhost by default, and has no
-//! authentication or rate limiting yet (SPEC §9.4).
+//! JSON RPC over HTTP. Binds to localhost by default and has no
+//! authentication: reads are public, and the only write carries its own
+//! signature. A node others can reach is served with per-client rate limits
+//! ([`router_with_limits`], SPEC §9).
 
 use std::sync::Arc;
 
@@ -17,6 +19,7 @@ use stein_types::{
     format_amount, format_units,
 };
 
+use crate::limit::{Limiter, StreamSlot};
 use crate::views::{BlockView, TxView};
 use crate::{Node, Role, SYNC_BATCH};
 
@@ -24,9 +27,21 @@ use crate::{Node, Role, SYNC_BATCH};
 /// doubles it.
 const MAX_BODY: usize = 64 * 1024;
 
-/// The RPC router.
+/// The RPC router, without rate limits: for tests and for a node only its
+/// own operator can reach.
 pub fn router(node: Arc<Node>) -> Router {
-    Router::new()
+    routes(node, None)
+}
+
+/// The RPC router, with each client held to `limiter`'s budgets. Serve it
+/// with `into_make_service_with_connect_info::<SocketAddr>()`, so a client
+/// is known by its address.
+pub fn router_with_limits(node: Arc<Node>, limiter: Arc<Limiter>) -> Router {
+    routes(node, Some(limiter))
+}
+
+fn routes(node: Arc<Node>, limiter: Option<Arc<Limiter>>) -> Router {
+    let router = Router::new()
         .route("/status", get(status))
         .route("/account/{address}", get(account))
         .route("/tx", post(submit))
@@ -44,14 +59,24 @@ pub fn router(node: Arc<Node>) -> Router {
         .route("/tokens", get(tokens))
         .route("/token/{address}", get(token))
         .route("/pools", get(pools))
-        .route("/pool/{address}", get(pool))
+        .route("/pool/{address}", get(pool));
+    // Inside the CORS layer, so a browser can read a 429 and its Retry-After.
+    let router = match limiter {
+        Some(limiter) => router.layer(axum::middleware::from_fn_with_state(
+            limiter,
+            crate::limit::enforce,
+        )),
+        None => router,
+    };
+    router
         // Explorers are served from their own origin. Reads are public; the
         // only write, POST /tx, carries its own signature.
         .layer(
             tower_http::cors::CorsLayer::new()
                 .allow_origin(tower_http::cors::Any)
                 .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
-                .allow_headers([axum::http::header::CONTENT_TYPE]),
+                .allow_headers([axum::http::header::CONTENT_TYPE])
+                .expose_headers([axum::http::header::RETRY_AFTER]),
         )
         .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY))
         .with_state(node)
@@ -593,6 +618,7 @@ async fn account_txs(
 /// are produced or verified and transactions accepted.
 async fn events(
     AxumState(node): AxumState<Arc<Node>>,
+    slot: Option<axum::Extension<Arc<StreamSlot>>>,
 ) -> axum::response::sse::Sse<
     impl futures_core::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
 > {
@@ -600,7 +626,9 @@ async fn events(
     use tokio_stream::StreamExt as _;
     use tokio_stream::wrappers::BroadcastStream;
 
-    let stream = BroadcastStream::new(node.events.subscribe()).filter_map(|event| {
+    let stream = BroadcastStream::new(node.events.subscribe()).filter_map(move |event| {
+        // Held for as long as the stream is: its end frees the client's slot.
+        let _ = &slot;
         // A subscriber that fell behind skips what it missed; it can catch
         // up through GET /blocks.
         let event = event.ok()?;
